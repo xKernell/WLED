@@ -16,7 +16,15 @@
 #endif
 
 #ifdef USERMOD_DALLASTEMPERATURE
-  #include "../usermods/Temperature/usermod_temperature.h"
+#include "../usermods/Temperature/usermod_temperature.h"
+#endif
+
+#ifdef USERMOD_CINEMAGIC_TEMPERATURE
+#include "../usermods/CinemagicTemperature/usermod_cinemagic_temperature.h"
+#endif
+
+#ifdef USERMOD_CINEMAGIC
+#include "../usermods/Cinemagic/usermod_cinemagic.h"
 #endif
 
 #ifdef USERMOD_SHT
@@ -214,8 +222,15 @@ void registerUsermods()
   #endif
 
   #ifdef USERMOD_DALLASTEMPERATURE
-  usermods.add(new UsermodTemperature());
+    usermods.add(new UsermodTemperature());
   #endif
+
+    #ifdef USERMOD_CINEMAGIC_TEMPERATURE
+        usermods.add(new UsermodCinemagicTemperature());
+    #endif
+    #ifdef USERMOD_CINEMAGIC
+        usermods.add(new UsermodCinemagic());
+    #endif
 
   #ifdef USERMOD_SN_PHOTORESISTOR
   usermods.add(new Usermod_SN_Photoresistor());

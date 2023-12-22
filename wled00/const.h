@@ -151,6 +151,9 @@
 #define USERMOD_ID_WIREGUARD             41     //Usermod "wireguard.h"
 #define USERMOD_ID_INTERNAL_TEMPERATURE  42     //Usermod "usermod_internal_temperature.h"
 #define USERMOD_ID_LDR_DUSK_DAWN         43     //Usermod "usermod_LDR_Dusk_Dawn_v2.h"
+#define USERMOD_ID_CINEMAGIC_TEMPERATURE 44     //Usermod "usermod_cinemagic_temperature.h"
+#define USERMOD_ID_CINEMAGIC             45     //Usermod "usermod_cinemagic.h"
+
 
 //Access point behavior
 #define AP_BEHAVIOR_BOOT_NO_CONN          0     //Open AP when no connection after boot
