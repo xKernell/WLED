@@ -67,6 +67,7 @@ public:
     static const char _contrastFix[];
 
     void begin();
+    void beginType2();
 
     void loop();
 
@@ -85,6 +86,8 @@ public:
     void updateIntensity();
 
     void drawStatusIcons();
+
+    void updateBatteryInfo(const float voltage, const float current, const float remainingCapacity, const uint8_t fullCapacity);
 
     /**
      * marks the position of the arrow showing
@@ -176,6 +179,8 @@ private:
 
     void drawString(uint8_t col, uint8_t row, const char *string, bool ignoreLH = false);
 
+    void drawSmallString(uint8_t col, uint8_t row, const char *string, bool ignoreLH = false);
+
     void draw2x2String(uint8_t col, uint8_t row, const char *string);
 
     void drawGlyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font, bool ignoreLH = false);
@@ -220,6 +225,24 @@ const char CinemagicDisplay::_contrastFix[]     PROGMEM = "contrastFix";
 CinemagicDisplay *CinemagicDisplay::instance = nullptr;
 #endif
 
+
+void CinemagicDisplay::beginType2() {
+    type = SSD1306_64;
+    if (i2c_scl < 0 || i2c_sda < 0) { type = NONE; }
+
+    DEBUG_PRINTLN(F("Allocating display."));
+    u8x8 = (U8X8 *) new U8X8_SSD1306_128X64_NONAME_HW_I2C();
+
+    if (nullptr == u8x8) {
+        DEBUG_PRINTLN(F("Display init failed."));
+        type = NONE;
+        enabled = false;
+        return;
+    }
+
+    startDisplay();
+    onUpdateBegin(false);  // create Display task
+}
 
 void CinemagicDisplay::begin() {
     bool isSPI = (type == SSD1306_SPI || type == SSD1306_SPI64 || type == SSD1309_SPI64);
@@ -345,6 +368,15 @@ void CinemagicDisplay::drawString(uint8_t col, uint8_t row, const char *string, 
     drawing = false;
 }
 
+void CinemagicDisplay::drawSmallString(uint8_t col, uint8_t row, const char *string, bool ignoreLH) {
+    if (type == NONE || !enabled) return;
+    drawing = true;
+    u8x8->setFont(u8x8_font_chroma48medium8_n);
+    if (!ignoreLH && lineHeight == 2) u8x8->draw1x2String(col, row, string);
+    else u8x8->drawString(col, row, string);
+    drawing = false;
+}
+
 void CinemagicDisplay::draw2x2String(uint8_t col, uint8_t row, const char *string) {
     if (type == NONE || !enabled) return;
     drawing = true;
@@ -399,8 +431,8 @@ void CinemagicDisplay::draw2x2GlyphIcons() {
         drawGlyph(1, 0, 1, u8x8_4LineDisplay_WLED_icons_2x2, true); //brightness icon
         drawGlyph(5, 0, 2, u8x8_4LineDisplay_WLED_icons_2x2, true); //speed icon
         drawGlyph(9, 0, 3, u8x8_4LineDisplay_WLED_icons_2x2, true); //intensity icon
-        drawGlyph(14, 2 * lineHeight, 4, u8x8_4LineDisplay_WLED_icons_2x2, true); //palette icon
-        drawGlyph(14, 3 * lineHeight, 5, u8x8_4LineDisplay_WLED_icons_2x2, true); //effect icon
+//        drawGlyph(14, 2 * lineHeight, 4, u8x8_4LineDisplay_WLED_icons_2x2, true); //palette icon
+//        drawGlyph(14, 3 * lineHeight, 5, u8x8_4LineDisplay_WLED_icons_2x2, true); //effect icon
     } else {
         drawGlyph(1, 0, 1, u8x8_4LineDisplay_WLED_icons_2x1); //brightness icon
         drawGlyph(5, 0, 2, u8x8_4LineDisplay_WLED_icons_2x1); //speed icon
@@ -1092,4 +1124,27 @@ void CinemagicDisplay::onConfigUpdated(DisplayType newType, const int8_t *oldPin
     knownHour = 99;
     if (needsRedraw && !wakeDisplay()) redraw(true);
     else overlayLogo(3500);
+}
+
+void CinemagicDisplay::updateBatteryInfo(const float voltage, const float current, const float remainingCapacity, const uint8_t fullCapacity) {
+#if defined(LCD_ON_SEPRATE_THREAD)
+    const unsigned long now = millis();
+    while (drawing && millis() - now < 125) delay(1); // wait if someone else is drawing
+    if (drawing || lockRedraw) return;
+#endif
+    if (overlayUntil == 0) {
+        lockRedraw = true;
+
+        char lineBuffer[7];
+        sprintf_P(lineBuffer, PSTR("%.2f"), voltage);
+        drawSmallString(12, lineHeight, lineBuffer, true);
+
+        sprintf_P(lineBuffer, PSTR("%.2f"), current);
+        drawSmallString(10, lineHeight * 2, lineBuffer, true);
+
+        sprintf_P(lineBuffer, PSTR("%.1f %.1f"), remainingCapacity, voltage * current);
+        drawSmallString(7, lineHeight * 3, lineBuffer, true);
+
+        lockRedraw = false;
+    }
 }

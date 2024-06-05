@@ -120,7 +120,6 @@
 #define FROZEN       (uint16_t)0x0010
 #define MIRROR       (uint16_t)0x0008
 #define SEGMENT_ON   (uint16_t)0x0004
-#define REVERSE      (uint16_t)0x0002
 #define SELECTED     (uint16_t)0x0001
 
 #define FX_MODE_STATIC                   0
