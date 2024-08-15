@@ -241,6 +241,8 @@ void CinemagicDisplay::beginType2() {
     }
 
     startDisplay();
+    setFlipMode(true);
+    setPowerSave(0);
     onUpdateBegin(false);  // create Display task
 }
 
@@ -504,8 +506,9 @@ void CinemagicDisplay::sleepOrClock(bool enable) {
         if (clockMode && ntpEnabled) {
             knownMinute = knownHour = 99;
             showTime();
-        } else
-            setPowerSave(1);
+        }
+//        } else
+//            setPowerSave(1);
     } else {
         displayTurnedOff = false;
         setPowerSave(0);
@@ -874,6 +877,12 @@ void CinemagicDisplay::overlayLogo(long showHowLong) {
     // Turn the display back on
     if (!wakeDisplay()) clear();
     // Print the overlay
+
+    drawing = true;
+    u8x8->setFont(u8x8_font_torussansbold8_r);
+    u8x8->draw1x2String(3, 3, "CINEMAGIC");
+    drawing = false;
+    /*
     if (lineHeight == 2) {
         //add a bit of randomness
         switch (millis() % 3) {
@@ -918,7 +927,7 @@ void CinemagicDisplay::overlayLogo(long showHowLong) {
                 draw2x2Glyph(6, 0, 12, u8x8_4LineDisplay_WLED_icons_2x2);
                 break;
         }
-    }
+    }*/
     overlayUntil = millis() + showHowLong;
     lockRedraw = false;
 }
@@ -1135,14 +1144,15 @@ void CinemagicDisplay::updateBatteryInfo(const float voltage, const float curren
     if (overlayUntil == 0) {
         lockRedraw = true;
 
-        char lineBuffer[7];
+        char lineBuffer[10];
         sprintf_P(lineBuffer, PSTR("%.2f"), voltage);
         drawSmallString(12, lineHeight, lineBuffer, true);
 
-        sprintf_P(lineBuffer, PSTR("%.2f"), current);
-        drawSmallString(10, lineHeight * 2, lineBuffer, true);
+        sprintf(lineBuffer, "%.2fA", current);
+        drawSmallString(11, lineHeight * 2, lineBuffer, true);
 
-        sprintf_P(lineBuffer, PSTR("%.1f %.1f"), remainingCapacity, voltage * current);
+        IPAddress ip = knownIp;
+        sprintf(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
         drawSmallString(7, lineHeight * 3, lineBuffer, true);
 
         lockRedraw = false;

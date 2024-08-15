@@ -173,20 +173,20 @@ private:
         }
 
         // Set input current limit to 3A (130 ohm resistor on ILIM)
-        if (mBQ->set_input_current_limit(3000) != BQ2589X_OK) {
+        if (mBQ->set_input_current_limit(5000) != BQ2589X_OK) {
             Serial.println("Failed to set input current limit");
         }
 
         // Set charge current to 2.5A
-        if (mBQ->set_charge_current(2500) != BQ2589X_OK) {
+        if (mBQ->set_charge_current(5000) != BQ2589X_OK) {
             Serial.println("Failed to set charge current");
         }
-        if (mBQ->set_prechg_current(500) != BQ2589X_OK) {
+        if (mBQ->set_prechg_current(400) != BQ2589X_OK) {
             Serial.println("Failed to set pre-charge current");
         }
 
         // Set minimum system voltage to 3.5V
-        if (mBQ->set_input_volt_limit(2500) != BQ2589X_OK) {
+        if (mBQ->set_input_volt_limit(3500) != BQ2589X_OK) {
             Serial.println("Failed to set input voltage limit");
         }
 
@@ -196,7 +196,7 @@ private:
         }
 
         // Enable auto DPDM detection
-        if (mBQ->enable_auto_dpdm(false) != BQ2589X_OK) {
+        if (mBQ->enable_auto_dpdm(true) != BQ2589X_OK) {
             Serial.println("Failed to enable auto DPDM");
         }
 
@@ -594,18 +594,15 @@ public:
         JsonObject user = root["u"];
         if (user.isNull()) user = root.createNestedObject("u");
 
-        //this code adds "u":{"ExampleUsermod":[20," lux"]} to the info object
-        //int reading = 20;
-        //JsonArray lightArr = user.createNestedArray(FPSTR(_name))); //name
-        //lightArr.add(reading); //value
-        //lightArr.add(F(" lux")); //unit
+        // Add battery voltage to the JSON info
+        JsonArray batteryVoltageArr = user.createNestedArray(F("Battery Voltage"));
+        batteryVoltageArr.add(mVoltage); // Add the voltage value
+        batteryVoltageArr.add(F("V")); // Add the unit
 
-        // if you are implementing a sensor usermod, you may publish sensor data
-        //JsonObject sensor = root[F("sensor")];
-        //if (sensor.isNull()) sensor = root.createNestedObject(F("sensor"));
-        //temp = sensor.createNestedArray(F("light"));
-        //temp.add(reading);
-        //temp.add(F("lux"));
+        // Add current usage to the JSON info
+        JsonArray currentUsageArr = user.createNestedArray(F("Current Usage"));
+        currentUsageArr.add(mCurrent); // Add the current value
+        currentUsageArr.add(F("A")); // Add the unit
     }
 
 

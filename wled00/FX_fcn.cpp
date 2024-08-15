@@ -77,6 +77,7 @@ uint16_t Segment::_usedSegmentData = 0U; // amount of RAM all segments use for t
 uint16_t Segment::maxWidth = DEFAULT_LED_COUNT;
 uint16_t Segment::maxHeight = 1;
 
+CRGBPalette16 Segment::_currentPalette    = CRGBPalette16(CRGB::Black);
 CRGBPalette16 Segment::_randomPalette = CRGBPalette16(DEFAULT_COLOR);
 CRGBPalette16 Segment::_newRandomPalette = CRGBPalette16(DEFAULT_COLOR);
 unsigned long Segment::_lastPaletteChange = 0; // perhaps it should be per segment
@@ -90,18 +91,21 @@ Segment::Segment(const Segment &orig) {
   //DEBUG_PRINTF("-- Copy segment constructor: %p -> %p\n", &orig, this);
   memcpy((void*)this, (void*)&orig, sizeof(Segment));
   _t = nullptr; // copied segment cannot be in transition
-  if (orig.name) { name = new char[strlen(orig.name)+1]; if (name) strcpy(name, orig.name); } else { name = nullptr; }
-  if (orig.data) { if (allocateData(orig._dataLen)) memcpy(data, orig.data, orig._dataLen); } else { data = nullptr; _dataLen = 0; }
+  name = nullptr;
+  data = nullptr;
+  _dataLen = 0;
+  if (orig.name) { name = new char[strlen(orig.name)+1]; if (name) strcpy(name, orig.name); }
+  if (orig.data) { if (allocateData(orig._dataLen)) memcpy(data, orig.data, orig._dataLen); }
 }
 
 // move constructor
 Segment::Segment(Segment &&orig) noexcept {
   //DEBUG_PRINTF("-- Move segment constructor: %p -> %p\n", &orig, this);
   memcpy((void*)this, (void*)&orig, sizeof(Segment));
+  orig._t   = nullptr; // old segment cannot be in transition any more
   orig.name = nullptr;
   orig.data = nullptr;
   orig._dataLen = 0;
-  orig._t   = nullptr; // old segment cannot be in transition any more
 }
 
 // copy assignment
@@ -110,14 +114,7 @@ Segment& Segment::operator= (const Segment &orig) {
   if (this != &orig) {
     // clean destination
     if (name) { delete[] name; name = nullptr; }
-    if (orig.name) { name = new char[strlen(orig.name)+1]; if (name) strcpy(name, orig.name); }
-    if (_t) {
-      #ifndef WLED_DISABLE_MODE_BLEND
-      if (_t->_segT._dataT) free(_t->_segT._dataT);
-      #endif
-      delete _t;
-      _t = nullptr; // copied segment cannot be in transition
-    }
+    stopTransition();
     deallocateData();
     // copy source
     memcpy((void*)this, (void*)&orig, sizeof(Segment));
@@ -125,6 +122,7 @@ Segment& Segment::operator= (const Segment &orig) {
     data = nullptr;
     _dataLen = 0;
     // copy source data
+    if (orig.name) { name = new char[strlen(orig.name)+1]; if (name) strcpy(name, orig.name); }
     if (orig.data) { if (allocateData(orig._dataLen)) memcpy(data, orig.data, orig._dataLen); }
   }
   return *this;
@@ -135,13 +133,7 @@ Segment& Segment::operator= (Segment &&orig) noexcept {
   //DEBUG_PRINTF("-- Moving segment: %p -> %p\n", &orig, this);
   if (this != &orig) {
     if (name) { delete[] name; name = nullptr; } // free old name
-    if (_t) {
-      #ifndef WLED_DISABLE_MODE_BLEND
-      if (_t->_segT._dataT) free(_t->_segT._dataT);
-      #endif
-      delete _t;
-      _t = nullptr;
-    }
+    stopTransition();
     deallocateData(); // free old runtime data
     memcpy((void*)this, (void*)&orig, sizeof(Segment));
     orig.name = nullptr;
@@ -153,10 +145,13 @@ Segment& Segment::operator= (Segment &&orig) noexcept {
 }
 
 bool Segment::allocateData(size_t len) {
-  if (data && _dataLen == len) return true; //already allocated
+  if (data && _dataLen >= len) {          // already allocated enough (reduce fragmentation)
+    if (call == 0) memset(data, 0, len);  // erase buffer if called during effect initialisation
+    return true;
+  }
   //DEBUG_PRINTF("--   Allocating data (%d): %p\n", len, this);
   deallocateData();
-  if (len == 0) return(false); // nothing to do
+  if (len == 0) return false; // nothing to do
   if (Segment::getUsedSegmentData() + len > MAX_SEGMENT_DATA) {
     // not enough memory
     DEBUG_PRINT(F("!!! Effect RAM depleted: "));
@@ -207,7 +202,7 @@ void Segment::resetIfRequired() {
 
 CRGBPalette16 &Segment::loadPalette(CRGBPalette16 &targetPalette, uint8_t pal) {
   if (pal < 245 && pal > GRADIENT_PALETTE_COUNT+13) pal = 0;
-  if (pal > 245 && (strip.customPalettes.size() == 0 || 255U-pal > strip.customPalettes.size()-1)) pal = 0;
+  if (pal > 245 && (strip.customPalettes.size() == 0 || 255U-pal > strip.customPalettes.size()-1)) pal = 0; // TODO remove strip dependency by moving customPalettes out of strip
   //default palette. Differs depending on effect
   if (pal == 0) switch (mode) {
     case FX_MODE_FIRE_2012  : pal = 35; break; // heat palette
@@ -349,8 +344,8 @@ void Segment::handleTransition() {
 // transition progression between 0-65535
 uint16_t Segment::progress() {
   if (isInTransition()) {
-    unsigned long timeNow = millis();
-    if (_t->_dur > 0 && timeNow - _t->_start < _t->_dur) return (timeNow - _t->_start) * 0xFFFFU / _t->_dur;
+    unsigned diff = millis() - _t->_start;
+    if (_t->_dur > 0 && diff < _t->_dur) return diff * 0xFFFFU / _t->_dur;
   }
   return 0xFFFFU;
 }
@@ -432,7 +427,7 @@ uint8_t Segment::currentBri(bool useCct) {
   uint32_t prog = progress();
   if (prog < 0xFFFFU) {
     uint32_t curBri = (useCct ? cct : (on ? opacity : 0)) * prog;
-    curBri += (useCct ? _t->_cctT : (on ? _t->_briT : 0)) * (0xFFFFU - prog);
+    curBri += (useCct ? _t->_cctT : _t->_briT) * (0xFFFFU - prog);
     return curBri / 0xFFFFU;
   }
   return (useCct ? cct : (on ? opacity : 0));
@@ -454,18 +449,17 @@ uint32_t Segment::currentColor(uint8_t slot) {
 #endif
 }
 
-CRGBPalette16 &Segment::currentPalette(CRGBPalette16 &targetPalette, uint8_t pal) {
-  loadPalette(targetPalette, pal);
-  uint16_t prog = progress();
+void Segment::setCurrentPalette() {
+  loadPalette(_currentPalette, palette);
+  unsigned prog = progress();
   if (strip.paletteFade && prog < 0xFFFFU) {
     // blend palettes
     // there are about 255 blend passes of 48 "blends" to completely blend two palettes (in _dur time)
     // minimum blend time is 100ms maximum is 65535ms
-    uint16_t noOfBlends = ((255U * prog) / 0xFFFFU) - _t->_prevPaletteBlends;
-    for (int i=0; i<noOfBlends; i++, _t->_prevPaletteBlends++) nblendPaletteTowardPalette(_t->_palT, targetPalette, 48);
-    targetPalette = _t->_palT; // copy transitioning/temporary palette
+    unsigned noOfBlends = ((255U * prog) / 0xFFFFU) - _t->_prevPaletteBlends;
+    for (unsigned i = 0; i < noOfBlends; i++, _t->_prevPaletteBlends++) nblendPaletteTowardPalette(_t->_palT, _currentPalette, 48);
+    _currentPalette = _t->_palT; // copy transitioning/temporary palette
   }
-  return targetPalette;
 }
 
 // relies on WS2812FX::service() to call it max every 8ms or more (MIN_SHOW_DELAY)
@@ -1084,11 +1078,7 @@ uint32_t Segment::color_from_palette(uint16_t i, bool mapping, bool wrap, uint8_
   uint8_t paletteIndex = i;
   if (mapping && virtualLength() > 1) paletteIndex = (i*255)/(virtualLength() -1);
   if (!wrap && strip.paletteBlend != 3) paletteIndex = scale8(paletteIndex, 240); //cut off blend at palette "end"
-  CRGBPalette16 curPal;
-  curPal = currentPalette(curPal, palette);
-  //if (isInTransition()) curPal = _t->_palT;
-  //else    loadPalette(curPal, palette);
-  CRGB fastled_col = ColorFromPalette(curPal, paletteIndex, pbri, (strip.paletteBlend == 3)? NOBLEND:LINEARBLEND); // NOTE: paletteBlend should be global
+  CRGB fastled_col = ColorFromPalette(_currentPalette, paletteIndex, pbri, (strip.paletteBlend == 3)? NOBLEND:LINEARBLEND); // NOTE: paletteBlend should be global
 
   return RGBW32(fastled_col.r, fastled_col.g, fastled_col.b, 0);
 }
@@ -1193,7 +1183,7 @@ void WS2812FX::service() {
         _colors_t[0] = seg.currentColor(0);
         _colors_t[1] = seg.currentColor(1);
         _colors_t[2] = seg.currentColor(2);
-        seg.currentPalette(_currentPalette, seg.palette); // we need to pass reference
+        seg.setCurrentPalette();              // load actual palette
 
         if (!cctFromRgb || correctWB) busses.setSegmentCCT(seg.currentBri(true), correctWB);
         for (int c = 0; c < NUM_COLORS; c++) _colors_t[c] = gamma32(_colors_t[c]);
