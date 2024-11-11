@@ -91,7 +91,7 @@ button {
 	background-color: transparent;
 	border: none;
 	transition: color 0.3s, background-color 0.3s;
-	font-size: 19px;
+	font-size: 16px;
 	color: var(--c-c);
 	min-width: 40px;
 	min-height: 40px;

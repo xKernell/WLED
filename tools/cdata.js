@@ -16,7 +16,8 @@
  */
 
 const fs = require("fs");
-const inliner = require("inliner");
+const path = require("path");
+const inlineSource = require('inline-source').inlineSource;
 const zlib = require("zlib");
 const CleanCSS = require("clean-css");
 const MinifyHTML = require("html-minifier-terser").minify;
@@ -72,7 +73,7 @@ function adoptVersionAndRepo(html) {
 }
 
 function filter(str, type) {
-  str = adoptVersionAndRepo(str);
+  // str = adoptVersionAndRepo(str);
   if (type === undefined) {
     return str;
   } else if (type == "css-minify") {
@@ -111,17 +112,11 @@ function filter(str, type) {
 
 function writeHtmlGzipped(sourceFile, resultFile, page) {
   console.info("Reading " + sourceFile);
-  new inliner(sourceFile, function (error, html) {
-    console.info("Inlined " + html.length + " characters");
+  inlineSource(sourceFile, { compress: true, rootpath: path.resolve('wled00/data') }).then((html) => {
     html = filter(html, "html-minify-ui");
     console.info("Minified to " + html.length + " characters");
 
-    if (error) {
-      console.warn(error);
-      throw error;
-    }
-
-    html = adoptVersionAndRepo(html);
+    // html = adoptVersionAndRepo(html);
     zlib.gzip(html, { level: zlib.constants.Z_BEST_COMPRESSION }, function (error, result) {
       if (error) {
         console.warn(error);
@@ -147,7 +142,7 @@ ${array}
       console.info("Writing " + resultFile);
       fs.writeFileSync(resultFile, src);
     });
-  });
+  }).catch(console.error);
 }
 
 function specToChunk(srcDir, s) {

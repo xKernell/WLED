@@ -2,6 +2,7 @@
 // Created by Mohsen Basiti on 2023-12-21.
 //
 #pragma once
+#ifdef USERMOD_CINEMAGIC_OLED
 #undef U8X8_NO_HW_I2C // borrowed from WLEDMM: we do want I2C hardware drivers - if possible
 
 #include <U8x8lib.h> // from https://github.com/olikraus/u8g2/
@@ -88,6 +89,8 @@ public:
     void drawStatusIcons();
 
     void updateBatteryInfo(const float voltage, const float current, const float remainingCapacity, const uint8_t fullCapacity);
+
+    void updateTemperatureInfo(const float temp1, const float temp2);
 
     /**
      * marks the position of the arrow showing
@@ -430,9 +433,9 @@ void CinemagicDisplay::center(String &line, uint8_t width) {
 void CinemagicDisplay::draw2x2GlyphIcons() {
     drawing = true;
     if (lineHeight == 2) {
-        drawGlyph(1, 0, 1, u8x8_4LineDisplay_WLED_icons_2x2, true); //brightness icon
-        drawGlyph(5, 0, 2, u8x8_4LineDisplay_WLED_icons_2x2, true); //speed icon
-        drawGlyph(9, 0, 3, u8x8_4LineDisplay_WLED_icons_2x2, true); //intensity icon
+        drawGlyph(1, 0, 1, u8x8_4LineDisplay_WLED_icons_2x1, true); //brightness icon
+        drawGlyph(5, 0, 2, u8x8_4LineDisplay_WLED_icons_2x1, true); //speed icon
+        drawGlyph(9, 0, 3, u8x8_4LineDisplay_WLED_icons_2x1, true); //intensity icon
 //        drawGlyph(14, 2 * lineHeight, 4, u8x8_4LineDisplay_WLED_icons_2x2, true); //palette icon
 //        drawGlyph(14, 3 * lineHeight, 5, u8x8_4LineDisplay_WLED_icons_2x2, true); //effect icon
     } else {
@@ -1145,16 +1148,41 @@ void CinemagicDisplay::updateBatteryInfo(const float voltage, const float curren
         lockRedraw = true;
 
         char lineBuffer[10];
-        sprintf_P(lineBuffer, PSTR("%.2f"), voltage);
-        drawSmallString(12, lineHeight, lineBuffer, true);
+        sprintf_P(lineBuffer, PSTR("V:%.2f"), voltage);
+        drawSmallString(10, lineHeight, lineBuffer, true);
 
-        sprintf(lineBuffer, "%.2fA", current);
-        drawSmallString(11, lineHeight * 2, lineBuffer, true);
+        sprintf_P(lineBuffer, "A:%.2fA", current);
+        drawSmallString(10, lineHeight * 2, lineBuffer, true);
 
         IPAddress ip = knownIp;
-        sprintf(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
-        drawSmallString(7, lineHeight * 3, lineBuffer, true);
+        sprintf_P(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
+        drawSmallString(10, lineHeight * 3, lineBuffer, true);
 
         lockRedraw = false;
     }
 }
+
+void CinemagicDisplay::updateTemperatureInfo(const float temp1, const float temp2) {
+#if defined(LCD_ON_SEPRATE_THREAD)
+    const unsigned long now = millis();
+    while (drawing && millis() - now < 125) delay(1); // wait if someone else is drawing
+    if (drawing || lockRedraw) return;
+#endif
+//    if (overlayUntil == 0) {
+//        lockRedraw = true;
+//
+//        char lineBuffer[10];
+//        sprintf_P(lineBuffer, PSTR("V:%.2f"), voltage);
+//        drawSmallString(10, lineHeight, lineBuffer, true);
+//
+//        sprintf_P(lineBuffer, "A:%.2fA", current);
+//        drawSmallString(10, lineHeight * 2, lineBuffer, true);
+//
+//        IPAddress ip = knownIp;
+//        sprintf_P(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
+//        drawSmallString(10, lineHeight * 3, lineBuffer, true);
+//
+//        lockRedraw = false;
+//    }
+}
+#endif

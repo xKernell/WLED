@@ -2,21 +2,12 @@
 
 #include "wled.h"
 #include "pin_manager.h"
-#include "cinemagic_display.h"
 #include <INA226.h>
-
-#ifdef USERMOD_CINEMAGIC_WITH_BQ2589
-#include "BQ2589/bq2589x.h"
+#ifdef USERMOD_CINEMAGIC_OLED
+#include "cinemagic_display.h"
 #endif
 
-#ifdef USERMOD_CINEMAGIC_WITH_PD
-#include "STUSB4500/STUSB4500.h"
-#define USBPD_RST_PIN  -1
-#define USBPD_ATCH_PIN -1
-#define USBPD_ALRT_PIN -1
-
-#define PDO_STR_LEN    48
-#endif
+extern "C" uint8_t temprature_sens_read();
 
 #ifdef USERMOD_CINEMAGIC_WITH_I2C_SCANNER
 #include "I2CScanner.h"
@@ -24,8 +15,10 @@ I2CScanner scanner;
 #endif
 
 // Power measurement
+const uint8_t USERMODE_CINEMAGIC_INA_ADDR = 0x40;
+#define USERMODE_CINEMAGIC_MAX_READINGS 5
 #ifndef USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL
-#define USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL 500
+#define USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL 300
 #endif
 
 #ifndef USERMOD_CINEMAGIC_PWR_MEMORY_UPDATE_INTERVAL
@@ -33,49 +26,34 @@ I2CScanner scanner;
 #endif
 
 #ifndef USERMOD_CINEMAGIC_BATT_CAPACITY
-#define USERMOD_CINEMAGIC_BATT_CAPACITY 24
+#define USERMOD_CINEMAGIC_BATT_CAPACITY 3000 // mA
 #endif
 
 #ifndef USERMOD_CINEMAGIC_BATT_CELLS
 #define USERMOD_CINEMAGIC_BATT_CELLS 1
 #endif
 
-#define USERMOD_CINEMAGIC_CHARGE_DIS_PIN 13
-#define USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN 32
+#ifndef USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN
+#define USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN -1
+#endif
 
+#ifndef USERMOD_CINEMAGIC_TEMP_BOARD_PIN
+#define USERMOD_CINEMAGIC_TEMP_BOARD_PIN -1
+#endif
 
 #ifndef USERMOD_CINEMAGIC_BATT_MAX_VOLTAGE
 #define USERMOD_CINEMAGIC_BATT_MAX_VOLTAGE 4.19
 #endif
 
 #ifndef USERMOD_CINEMAGIC_BATT_MIN_VOLTAGE
-#define USERMOD_CINEMAGIC_BATT_MIN_VOLTAGE 2.9
-#endif
-
-// STUSB4500
-#ifdef USERMOD_CINEMAGIC_WITH_PD
-#define STUSB4500_ADDR 0x28  // The I2C address of the STUSB4500
-#define NVM_COMMAND 0x1A  // Register for NVM command
-#define NVM_UNLOCK 0x95  // Command to unlock NVM
-#define NVM_LOCK 0x97  // Command to lock NVM
-
-#define PDO1_REGISTER 0x85  // Base register for PDO1
-#define PDO1_VOLTAGE 0x23  // Offset for PDO1 voltage
-#define PDO1_CURRENT 0x25  // Offset for PDO1 current
-
-#define EXPECTED_VOLTAGE 0x8C  // Expected value for 15V
-#define EXPECTED_CURRENT 0x12C  // Expected value for 3A
-#define STATUS_VOLTAGE 0x54  // Register for current voltage status
-#define STATUS_CURRENT 0x56  // Register for current current status
-
-#define STATUS_REGISTER 0x28  // Status register (example, verify from datasheet)
-#define VOLTAGE_OFFSET 0x85  // Actual register offset for voltage
-#define CURRENT_OFFSET 0x87  // Actual register offset for current
+#define USERMOD_CINEMAGIC_BATT_MIN_VOLTAGE 3.0
 #endif
 
 class UsermodCinemagic : public Usermod {
 private:
+#ifdef USERMOD_CINEMAGIC_OLED
     CinemagicDisplay display;
+#endif
     bool enabled{true};
     bool mInited{false};
 
@@ -89,29 +67,35 @@ private:
     INA226 *ina{nullptr};
     unsigned long lastPwrUpdate{0};
     unsigned long lastMemoryPwrUpdate{0};
-    float mVoltage{0};
-    float mCurrent{0};
-    float mCycle{0};
-    float mCurrentCapacity{0};
-    uint8_t mBatteryFullCapacity{USERMOD_CINEMAGIC_BATT_CAPACITY};
+    uint8_t mPwrIndex = 0;
+    int32_t mVoltageBuffer[USERMODE_CINEMAGIC_MAX_READINGS] = {0};
+    int32_t mCurrentBuffer[USERMODE_CINEMAGIC_MAX_READINGS] = {0};
+    int64_t mVoltageSum{0};
+    int64_t mCurrentSum{0};
+    int32_t mVoltage{0};
+    int32_t mCurrent{0};
+    unsigned long mCycle{0};
+    uint16_t mCurrentCapacity{0};
+    uint16_t mBatteryFullCapacity{USERMOD_CINEMAGIC_BATT_CAPACITY};
     uint8_t mBatteryCells{USERMOD_CINEMAGIC_BATT_CELLS};
 
-    float mTemp1{0};
+    // temperatures
+    int16_t mTempCPU{0};
+    int16_t mTemp1{0};
+    int16_t mTemp2{0};
     unsigned long lastTempUpdate{0};
-
-#ifdef USERMOD_CINEMAGIC_WITH_BQ2589
-    bq2589x *mBQ{nullptr};
-    unsigned long lastBQUpdate{0};
-#endif
-
-
-#ifdef USERMOD_CINEMAGIC_WITH_PD
-    unsigned long pdlastupdate{0};
-    bool mPDDeviceFound{false};
-    STUSB4500 *usbpd{nullptr};
-#endif
+    unsigned long lastTempBriAdjust{0};
+    bool mBriReducedByTemp{false};
+    bool mCriticalTemp{false};
+    uint8_t mCriticalOrigTemp{false};
 
     void initINA() {
+        // Initialize buffers
+        for (int i = 0; i < USERMODE_CINEMAGIC_MAX_READINGS; i++) {
+            mVoltageBuffer[i] = 0;
+            mCurrentBuffer[i] = 0;
+        }
+
         // init ina226
         // Default INA226 address is 0x40
         ina = new INA226(Wire);
@@ -125,29 +109,85 @@ private:
         ina->calibrate(0.02, 8);
     }
 
+    void initTemperature(){
+        analogReadResolution(12); // Set the resolution to 12-bit
+        if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN >= 0 && pinManager.allocatePin(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, true, PinOwner::UM_CINEMAGIC)) {
+            pinMode(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, INPUT);
+        }
+        if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN >= 0 && pinManager.allocatePin(USERMOD_CINEMAGIC_TEMP_BOARD_PIN, true, PinOwner::UM_CINEMAGIC)) {
+            pinMode(USERMOD_CINEMAGIC_TEMP_BOARD_PIN, INPUT);
+        }
+    }
+
     void measurePower() {
         if (millis() - lastPwrUpdate < USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL)
             return;
+        lastPwrUpdate = millis();
 
         if (!ina) {
             DEBUG_PRINTLN("Cinemagic: Error in measuring power. INA is not initiated!");
             return;
         }
-        mVoltage = ina->readBusVoltage();
-        mCurrent = ina->readShuntCurrent();
-        const float elapsed = (millis() - lastPwrUpdate) / 1000.f; // seconds
-        const float consumed = elapsed / 3600.f * mVoltage * mCurrent;
-        mCurrentCapacity -= consumed;
-        mCycle += consumed;
-        lastPwrUpdate = millis();
 
-        if (mBatteryCells * USERMOD_CINEMAGIC_BATT_MAX_VOLTAGE <= mVoltage) {
-            mCurrentCapacity = mBatteryFullCapacity;
-        }
-        if (mBatteryCells * USERMOD_CINEMAGIC_BATT_MIN_VOLTAGE >= mVoltage) {
-            mCurrentCapacity = 0;
+        // Read voltage and current using the library
+        float voltage_V = ina->readBusVoltage(); // Voltage in V
+        float current_A = ina->readShuntCurrent(); // Current in A
+
+        // Convert to desired units
+        int32_t newVoltage = (int32_t)(voltage_V * 100); // Convert V to 0.01V units
+        int32_t newCurrent = (int32_t)(current_A * 100); // Convert A to 0.01A units
+
+        // Update sums by subtracting the oldest reading and adding the new one
+        mVoltageSum -= mVoltageBuffer[mPwrIndex];
+        mCurrentSum -= mCurrentBuffer[mPwrIndex];
+
+        mVoltageBuffer[mPwrIndex] = newVoltage;
+        mCurrentBuffer[mPwrIndex] = newCurrent;
+
+        mVoltageSum += newVoltage;
+        mCurrentSum += newCurrent;
+
+        // Compute averages once and store them
+        mVoltage = mVoltageSum / USERMODE_CINEMAGIC_MAX_READINGS;
+        mCurrent = mCurrentSum / USERMODE_CINEMAGIC_MAX_READINGS;
+
+        // Move to the next index in a circular manner
+        mPwrIndex = (mPwrIndex + 1) % USERMODE_CINEMAGIC_MAX_READINGS;
+
+
+
+//        mVoltage = ina->readBusVoltage();
+//        mCurrent = ina->readShuntCurrent();
+//        const float elapsed = (millis() - lastPwrUpdate) / 1000.f; // seconds
+//        const float consumed = elapsed / 3600.f * mVoltage * mCurrent;
+//        mCurrentCapacity -= consumed;
+//        mCycle += consumed;
+//        lastPwrUpdate = millis();
+//
+//        if (mBatteryCells * USERMOD_CINEMAGIC_BATT_MAX_VOLTAGE <= mVoltage) {
+//            mCurrentCapacity = mBatteryFullCapacity;
+//        }
+//        if (mBatteryCells * USERMOD_CINEMAGIC_BATT_MIN_VOLTAGE >= mVoltage) {
+//            mCurrentCapacity = 0;
+//        }
+
+#ifdef USERMOD_CINEMAGIC_MAX_SAFE_CURRENT
+        static int16_t briMultiplierInt = briMultiplier;  // Retain as integer with one decimal place
+        bool updateRequired = false;  // Track if update is needed
+
+        if (mCurrent > USERMOD_CINEMAGIC_MAX_SAFE_CURRENT / 10 + 5) {
+            briMultiplierInt = max((briMultiplierInt * 98) / 100, 10);  // Ensure it doesn't go below 10.0 (represented as 100)
+            updateRequired = true;
+            mBriReducedByTemp = false;
+        } else if (mCurrent < USERMOD_CINEMAGIC_MAX_SAFE_CURRENT / 10 - 5 && briMultiplierInt < 1000 && !mBriReducedByTemp) {
+            briMultiplierInt = min((briMultiplierInt * 102) / 100, 100);  // Ensure it doesn't exceed 100.0 (represented as 1000)
+            updateRequired = true;
         }
 
+        if (updateRequired) {
+            updateBrightnessCap(briMultiplierInt);
+        }
+#endif
         // update battery capacity in ROM
 //        if (millis() - lastMemoryPwrUpdate > USERMOD_CINEMAGIC_PWR_MEMORY_UPDATE_INTERVAL) {
 //            saveToConfig();
@@ -155,323 +195,98 @@ private:
 //            DEBUG_PRINTF("Cinemagic: Power parameters saved in the memory!!!\n");
 //        }
 
+#ifdef USERMOD_CINEMAGIC_OLED
         display.updateBatteryInfo(mVoltage, mCurrent, mCurrentCapacity, mBatteryFullCapacity);
-        DEBUG_PRINTF(
-                "Cinemagic: Voltage %.3fV, Current %.3fC, Power %.3fW, Capacity: %.3fW, Percentage: %.2f, Temp1: %.2f\n",
-                mVoltage, mCurrent, mVoltage * mCurrent, mCurrentCapacity,
-                mCurrentCapacity / mBatteryFullCapacity * 100, mTemp1);
-    }
-
-    void BQInit() {
-#ifdef USERMOD_CINEMAGIC_WITH_BQ2589
-        mBQ = new bq2589x();
-        mBQ->begin(0x6A, &Wire);
-
-        // Disable HiZ mode
-        if (mBQ->exit_hiz_mode() != BQ2589X_OK) {
-            Serial.println("Failed to exit HiZ mode");
-        }
-
-        // Set input current limit to 3A (130 ohm resistor on ILIM)
-        if (mBQ->set_input_current_limit(5000) != BQ2589X_OK) {
-            Serial.println("Failed to set input current limit");
-        }
-
-        // Set charge current to 2.5A
-        if (mBQ->set_charge_current(5000) != BQ2589X_OK) {
-            Serial.println("Failed to set charge current");
-        }
-        if (mBQ->set_prechg_current(400) != BQ2589X_OK) {
-            Serial.println("Failed to set pre-charge current");
-        }
-
-        // Set minimum system voltage to 3.5V
-        if (mBQ->set_input_volt_limit(3500) != BQ2589X_OK) {
-            Serial.println("Failed to set input voltage limit");
-        }
-
-        // Start ADC conversion
-        if (mBQ->adc_start(false) != BQ2589X_OK) {
-            Serial.println("Failed to start ADC");
-        }
-
-        // Enable auto DPDM detection
-        if (mBQ->enable_auto_dpdm(true) != BQ2589X_OK) {
-            Serial.println("Failed to enable auto DPDM");
-        }
-
-        if (mBQ->disable_watchdog_timer() != BQ2589X_OK) {
-            Serial.println("Failed to eDisable watchdog");
-        }
-
-        // Enable charger
-        if (mBQ->enable_charger() != BQ2589X_OK) {
-            Serial.println("Failed to enable charger");
-        }
-
-        Serial.println("BQ25895 initialization complete");
 #endif
-    }
-
-    void BQLoop() {
-#ifdef USERMOD_CINEMAGIC_WITH_BQ2589
-        if (millis() - lastBQUpdate < 1000)
-            return;
-        lastBQUpdate = millis();
-
-        if (!mBQ) {
-            DEBUG_PRINTLN("Cinemagic: Error in connecting to bq bms chip!");
-            return;
-        }
-
-//        mBQ->reset_watchdog_timer();
-
-        // Debugging read operations
-        int batteryVolt = mBQ->adc_read_battery_volt();
-        int sysVolt = mBQ->adc_read_sys_volt();
-        int busVolt = mBQ->adc_read_vbus_volt();
-        int temperature = mBQ->adc_read_temperature();
-        int chargeCurrent = mBQ->adc_read_charge_current();
-        int idpmLimit = mBQ->read_idpm_limit();
-        int chargingStatus = mBQ->get_charging_status();
-
-        DEBUG_PRINTF("Cinemagic: BQ BMS, BAT Voltage %dmV, SYS Voltage: %dmV, BUS Voltage: %dmV, Temp: %d°C, Charge Current: %dmA, IDMP Limit: %dmA, Status: %d\n",
-                     batteryVolt, sysVolt, busVolt, temperature, chargeCurrent, idpmLimit, chargingStatus);
 //        DEBUG_PRINTF(
-//                "Cinemagic: BQ BMS, BAT Voltage %.3fV, SYS Voltage: %.3f, BUS Voltage: %.3f, Temp: %.1f, Charge Current: %.3fA, IDMP Limit: %0.3fA, Charge Status: %s\n",
-//                mBQ->adc_read_battery_volt(), mBQ->adc_read_sys_volt(), mBQ->adc_read_vbus_volt(),
-//                mBQ->adc_read_temperature(), mBQ->adc_read_charge_current(), mBQ->read_idpm_limit(),
-//                (mBQ->get_charging_status() == 0 ? "Not Charging" : (mBQ->get_charging_status() == 1 ? "Pre Charging" : (mBQ->get_charging_status() == 2 ? "Fast Charging" : "Charge Terminations Done")))
-//        );
-#endif
+//                "Cinemagic: Voltage %.3fV, Current %.3fC, Power %.3fW, Capacity: %.3fW, Percentage: %.2f, Temp1: %.2f\n",
+//                mVoltage, mCurrent, mVoltage * mCurrent, mCurrentCapacity,
+//                mCurrentCapacity / mBatteryFullCapacity * 100, mTemp1);
     }
 
-#ifdef USERMOD_CINEMAGIC_WITH_PD
+    void measureTemperature(){
+        if (millis() - lastTempUpdate > USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL) {
+            lastTempUpdate = millis();
 
-    uint8_t PDReadRegister(uint8_t reg) {
-        if (!mPDDeviceFound) {
-            return 0;
-        }
-//        do {
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(reg);
-        if (Wire.endTransmission() != 0){
-        DEBUG_PRINTLN("Cinemagic: PDReadRegister() error in write");
-        }
+            const uint32_t R25 = 10000;        // Resistance at 25°C (10k ohms)
+            const uint32_t B = 3950;           // B constant
+            const uint32_t ADC_MAX = 4095;     // 12-bit ADC maximum value
 
-//        do {
-            Wire.requestFrom(STUSB4500_ADDR, 1);
-//        } while (Wire.available() != 0);
-//        return Wire.read();
-        if (Wire.available()) {
-            return Wire.read();
-        }
-        DEBUG_PRINTLN("Cinemagic: PDReadRegister() error");
-        return 0;  // Return 0 if read fails
-    }
+            uint16_t analogValue;
+            float resistance, tempK, temperatureC;
+            int16_t temperatureC_x100; // Temperature in 0.01°C units
 
-    // Function to read a 16-bit register from STUSB4500
-    uint16_t PDReadRegister16(uint8_t reg) {
-        if (!mPDDeviceFound) {
-            return 0;
-        }
-        uint16_t value = 0;
-
-//        do {
-            delay(10);
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(reg);
-//        } while (Wire.endTransmission() != 0);
-        if (Wire.endTransmission() != 0) {
-            DEBUG_PRINTLN("Cinemagic: PDReadRegister16() write error");
-            return 0;
-        }
-
-        delay(10);  // Small delay to ensure device is ready
-
-//        do {
-            Wire.requestFrom(STUSB4500_ADDR, 2);  // Request 2 bytes (16 bits)
-//        } while (Wire.available() >= 2);
-//        uint8_t lowerByte = Wire.read();  // Read the lower byte
-//        uint8_t upperByte = Wire.read();  // Read the upper byte
-//        value = (upperByte << 8) | lowerByte;  // Combine the bytes
-        if (Wire.available() >= 2) {
-            uint8_t lowerByte = Wire.read();  // Read the lower byte
-            uint8_t upperByte = Wire.read();  // Read the upper byte
-            value = (upperByte << 8) | lowerByte;  // Combine the bytes
-        } else {
-            DEBUG_PRINTLN("Cinemagic: PDReadRegister16() read error");
-        }
-
-        return value;
-    }
-
-// Function to configure the STUSB4500
-    void PDConfigure() {
-        if (!mPDDeviceFound) {
-            return;
-        }
-        // Unlock NVM
-//        do {
-            delay(10);
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(NVM_COMMAND);
-            Wire.write(NVM_UNLOCK);
-//        } while (Wire.endTransmission() != 0);
-//        DEBUG_PRINTLN("Cinemagic: NVM unlock DONE");
-        if (Wire.endTransmission() != 0) {
-            DEBUG_PRINTLN("Cinemagic: NVM unlock error");
-            return;
-        }
-
-        delay(10);  // Small delay to ensure device is ready
-
-        // Set PDO1 voltage to 15V
-//        do {
-            delay(10);
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(PDO1_REGISTER + PDO1_VOLTAGE);
-            Wire.write(EXPECTED_VOLTAGE);  // Value for 15V
-//        } while (Wire.endTransmission() != 0);
-//        DEBUG_PRINTLN("Cinemagic: PDO1 voltage set DONE");
-        if (Wire.endTransmission() != 0) {
-            DEBUG_PRINTLN("Cinemagic: PDO1 voltage set error");
-            return;
-        }
-
-        delay(10);  // Small delay to ensure device is ready
-
-        // Set PDO1 current to max value (3A)
-//        do {
-            delay(10);
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(PDO1_REGISTER + PDO1_CURRENT);
-            Wire.write(EXPECTED_CURRENT);  // Value for 3A
-//        } while (Wire.endTransmission() != 0);
-//        DEBUG_PRINTLN("Cinemagic: PDO1 current set DONE");
-        if (Wire.endTransmission() != 0) {
-            DEBUG_PRINTLN("Cinemagic: PDO1 current set error");
-            return;
-        }
-
-        delay(10);  // Small delay to ensure device is ready
-
-        // Lock NVM to save settings
-//        do {
-            delay(10);
-            Wire.beginTransmission(STUSB4500_ADDR);
-            Wire.write(NVM_COMMAND);
-            Wire.write(NVM_LOCK);
-//        } while (Wire.endTransmission() != 0);
-//        DEBUG_PRINTLN("Cinemagic: NVM lock DONE");
-        if (Wire.endTransmission() != 0) {
-            DEBUG_PRINTLN("Cinemagic: NVM lock error");
-            return;
-        }
-
-        DEBUG_PRINTLN("Cinemagic: PDConfigure() DONE");
-    }
-
+#ifdef ARDUINO_ARCH_ESP32
+            // CPU Temperature in 0.01°C units
+            mTempCPU = static_cast<int16_t>(((temprature_sens_read() - 32) * 1000) / 18);
 #endif
 
-    void initPD() {
-#ifdef USERMOD_CINEMAGIC_WITH_PD
-////        do {
-////            Wire.beginTransmission(STUSB4500_ADDR);
-////            delay(100);
-////        } while (Wire.endTransmission() != 0);
-////        mPDDeviceFound = true;
-////        DEBUG_PRINTLN("Cinemagic: Found PD chip.");
-//
-//        Wire.beginTransmission(STUSB4500_ADDR);
-//        if (Wire.endTransmission() == 0) {
-//            mPDDeviceFound = true;
-//            DEBUG_PRINTLN("Cinemagic: Found PD chip.");
-//        } else {
-//            DEBUG_PRINTLN("Cinemagic: Cannot find PD chip.");
-//            return;
-//        }
-//
-//        // Read back the current configuration
-//        uint16_t currentVoltage = PDReadRegister16(STATUS_REGISTER + VOLTAGE_OFFSET);
-//        DEBUG_PRINT("Cinemagic: Current Voltage Raw: ");
-//        DEBUG_PRINTLN(currentVoltage);
-//
-//        uint16_t currentCurrent = PDReadRegister16(STATUS_REGISTER + CURRENT_OFFSET);
-//        DEBUG_PRINT("Cinemagic: Current Current Raw: ");
-//        DEBUG_PRINTLN(currentCurrent);
-//
-//        // Check if the configuration matches the expected values
-//        if (currentVoltage != EXPECTED_VOLTAGE || currentCurrent != EXPECTED_CURRENT) {
-//            DEBUG_PRINTLN("Cinemagic: PDConfigure() Starting ...");
-//            PDConfigure();  // Configure the STUSB4500 if values are incorrect
-//        } else {
-//            DEBUG_PRINTLN("Cinemagic: PDConfigure() Skipped, PD already configured");
-//        }
-        usbpd = new STUSB4500(USBPD_RST_PIN, STUSB4500_ADDR, &Wire);
-        if (usbpd->begin(USBPD_ALRT_PIN, USBPD_ATCH_PIN)) {
-            DEBUG_PRINT("CINEMAGIC: STUSB4500 v");
-            DEBUG_PRINTLN(usbpd->version());
-
-            // set power to default USB (5V 1.5A) initially
-//            usbpd.setPowerDefaultUSB();
-
-// Ensure the device is ready
-            if (!usbpd->ready()) {
-                Serial.println("Device not ready");
-                return;
+            if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN > -1) {
+                analogValue = analogRead(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN);
+                if (analogValue == 0) analogValue = 1; // Prevent division by zero
+                resistance = 10000.0f * (ADC_MAX / analogValue - 1.0f);
+                tempK = 1.0f / ((logf(resistance / R25) / B) + (1.0f / 298.15f));
+                temperatureC = tempK - 273.15f;
+                temperatureC_x100 = static_cast<int16_t>(temperatureC * 100.0f);
+                mTemp1 = -temperatureC_x100 + 4700; // mTemp1 in 0.01°C units
             }
 
-            // Request source capabilities from the PD source
-            if (!usbpd->requestSourceCapabilities()) {
-                Serial.println("Failed to request source capabilities");
-                return;
+            if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN > -1) {
+                analogValue = analogRead(USERMOD_CINEMAGIC_TEMP_BOARD_PIN);
+                if (analogValue == 0) analogValue = 1; // Prevent division by zero
+                resistance = 10000.0f * (ADC_MAX / analogValue - 1.0f);
+                tempK = 1.0f / ((logf(resistance / R25) / B) + (1.0f / 298.15f));
+                temperatureC = tempK - 273.15f;
+                temperatureC_x100 = static_cast<int16_t>(temperatureC * 100.0f);
+                mTemp2 = -temperatureC_x100 + 4700; // mTemp2 in 0.01°C units
             }
 
-            // Set the desired power profile
-            if (!usbpd->setPower(9000, 3000)) {
-                Serial.println("Failed to set power");
-                return;
+#ifdef USERMOD_CINEMAGIC_CRITICAL_TEMP
+            if (mTemp2 > USERMOD_CINEMAGIC_CRITICAL_TEMP * 100){
+                mCriticalOrigTemp = briMultiplier;
+                mBriReducedByTemp = true;
+                mCriticalTemp = true;
+                updateBrightnessCap(1);
+            } else if (mCriticalTemp && mTemp2 < USERMOD_CINEMAGIC_CRITICAL_TEMP * 100 - 500){
+                mCriticalTemp = false;
+                updateBrightnessCap(briMultiplier);
             }
-        } else {
-            Serial.println("failed to initialize STUSB4500");
-        }
 #endif
+#ifdef USERMOD_CINEMAGIC_MAX_SAFE_TEMP
+            if (millis() - lastTempBriAdjust > 60000 && !mCriticalTemp){
+                static int16_t briMultiplierInt = briMultiplier;  // Retain as integer with one decimal place
+                bool updateRequired = false;  // Track if update is needed
+                int16_t maxTemp = max(mTemp1, mTemp2);
+
+                if (maxTemp > USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100 + 100) {
+                    briMultiplierInt = max((briMultiplierInt * 95) / 100, 10);  // Ensure it doesn't go below 10.0 (represented as 100)
+                    updateRequired = true;
+                    mBriReducedByTemp = true;
+                } else if (maxTemp < USERMOD_CINEMAGIC_MAX_SAFE_CURRENT * 100 - 100 && briMultiplierInt < 1000 && mBriReducedByTemp) {
+                    briMultiplierInt = min((briMultiplierInt * 105) / 100, 100);  // Ensure it doesn't exceed 100.0 (represented as 1000)
+                    updateRequired = true;
+                }
+
+                if (updateRequired) {
+                    updateBrightnessCap(briMultiplierInt);
+                }
+                lastTempBriAdjust = millis();
+            }
+#endif
+
+#ifdef USERMOD_CINEMAGIC_OLED
+            if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN > -1 || USERMOD_CINEMAGIC_TEMP_BOARD_PIN > -1){
+                display.updateTemperatureInfo(mTemp1, mTemp2);
+            }
+#endif
+        }
     }
 
-    void PDLoop() {
-#ifdef USERMOD_CINEMAGIC_WITH_PD
-
-        if (millis() - pdlastupdate < 1000)
-            return;
-
-        pdlastupdate = millis();
-
-        PDO requestedPDO = usbpd->requestedPDO();
-        if (requestedPDO.number > 0) {
-            DEBUG_PRINTF("Cinemagic: PD Voltage %dV, Current %dC\n", requestedPDO.voltage_mV, requestedPDO.current_mA);
-        } else {
-            DEBUG_PRINTLN("Cinemagic: No power delivery profile active");
-            Serial.println("No power delivery profile active");
-        }
-//        uint16_t voltageRaw = PDReadRegister16(STATUS_VOLTAGE);
-//        uint16_t currentRaw = PDReadRegister16(STATUS_CURRENT);
-//
-//        // Convert raw values to actual voltage and current
-//        float voltage = voltageRaw * 0.05;  // Voltage in volts (assuming 50mV steps)
-//        float current = currentRaw * 0.01;  // Current in amps (assuming 10mA steps)
-//
-//        // Display the values (replace with actual display or serial print code)
-//        Serial.print("Voltage: ");
-//        Serial.print(voltage);
-//        Serial.println(" V");
-//
-//        Serial.print("Current: ");
-//        Serial.print(current);
-//        Serial.println(" A");
-//
-//        DEBUG_PRINTF("Cinemagic: PD Voltage %.3fV, Current %.3fC\n", voltage, current);
-#endif
+    void updateBrightnessCap(int16_t brightness){
+        briMultiplier = static_cast<byte>(brightness);  // Convert back to integer percentage (0-100)
+        strip.setBrightness((bri * briMultiplier) / 100);
+        updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
+        strip.show();
     }
 
     void saveToConfig();
@@ -491,9 +306,11 @@ public:
         if (!enabled) return;
         DEBUG_PRINTLN("Cinemagic user mod started");
 
+#ifdef USERMOD_CINEMAGIC_OLED
         display.beginType2();
+#endif
+
         initINA();
-        initPD();
 
 #ifdef USERMOD_CINEMAGIC_WITH_I2C_SCANNER
         scanner.Init();
@@ -502,19 +319,7 @@ public:
 #endif
 
         // temperature
-        analogReadResolution(12); // Set the resolution to 12-bit
-        if (pinManager.allocatePin(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, true, PinOwner::None)) {
-            pinMode(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, INPUT);
-        }
-
-        // chargedis control
-        if (pinManager.allocatePin(USERMOD_CINEMAGIC_CHARGE_DIS_PIN, true, PinOwner::BusDigital)) {
-            pinMode(USERMOD_CINEMAGIC_CHARGE_DIS_PIN, OUTPUT);
-            digitalWrite(USERMOD_CINEMAGIC_CHARGE_DIS_PIN, LOW);
-        }
-
-        // BQ2589 Charger controller
-        BQInit();
+        initTemperature();
 
         mInited = true;
     }
@@ -525,9 +330,11 @@ public:
      * Use it to initialize network interfaces
      */
     void connected() {
+#ifdef USERMOD_CINEMAGIC_OLED
         display.knownSsid = WiFi.SSID();       //apActive ? apSSID : WiFi.SSID(); //apActive ? WiFi.softAPSSID() :
         display.knownIp = Network.localIP(); //apActive ? IPAddress(4, 3, 2, 1) : Network.localIP();
         display.networkOverlay(PSTR("NETWORK INFO"), 7000);
+#endif
     }
 
     void loop() {
@@ -547,31 +354,13 @@ public:
         // power measurement
         measurePower();
 
-        // PD Controller
-        PDLoop();
-
-        // BQ BMS
-        BQLoop();
-
         // temperature
-        if (millis() - lastTempUpdate > USERMOD_CINEMAGIC_PWR_MEASURE_INTERVAL) {
-            lastTempUpdate = millis();
-            const float R25 = 10000.0;        // Resistance at 25°C (10k ohms)
-            const float B = 3950.0;           // B constant
-
-            int analogValue = analogRead(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN);
-
-            if (analogValue == 0) analogValue = 1;
-
-            float voltage = analogValue * (3.3 / 4095.0);
-            float resistance = 10000.f * (3.3f / voltage - 1);
-            float tempK = 1.f / ((log(resistance / R25) / B) + (1.f / 298.15)); // 298.15 K is 25°C
-            float temperatureC = tempK - 273.15f; // Convert Kelvin to Celsius
-            mTemp1 = -1 * temperatureC + 47;
-        }
+        measureTemperature();
 
         // display update
+#ifdef USERMOD_CINEMAGIC_OLED
         display.loop();
+#endif
     }
 
 
@@ -596,13 +385,37 @@ public:
 
         // Add battery voltage to the JSON info
         JsonArray batteryVoltageArr = user.createNestedArray(F("Battery Voltage"));
-        batteryVoltageArr.add(mVoltage); // Add the voltage value
+        batteryVoltageArr.add((float)mVoltage / 100.0f); // Add the voltage value
         batteryVoltageArr.add(F("V")); // Add the unit
 
         // Add current usage to the JSON info
         JsonArray currentUsageArr = user.createNestedArray(F("Current Usage"));
-        currentUsageArr.add(mCurrent); // Add the current value
+        currentUsageArr.add((float)mCurrent / 100.0f); // Add the current value
         currentUsageArr.add(F("A")); // Add the unit
+
+        // Add temp 1 to the JSON info
+        JsonArray temp1Arr = user.createNestedArray(F("CPU Temp"));
+        temp1Arr.add((float)mTempCPU / 100.0f);
+        temp1Arr.add(F("C"));
+
+        // Add temp 1 to the JSON info
+        if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN > -1) {
+            JsonArray temp1Arr = user.createNestedArray(F("LED Panel Temp"));
+            temp1Arr.add((float)mTemp1 / 100.0f);
+            temp1Arr.add(F("C"));
+        }
+
+        // Add temp 2 to the JSON info
+        if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN > -1) {
+            JsonArray temp2Arr = user.createNestedArray(F("Mainboard Temp"));
+            temp2Arr.add((float)mTemp2 / 100.0f);
+            temp2Arr.add(F("C"));
+        }
+
+        // Add temp 2 to the JSON info
+        JsonArray temp2Arr = user.createNestedArray(F("Brightness Limit"));
+        temp2Arr.add(briMultiplier);
+        temp2Arr.add(F("%"));
     }
 
 
@@ -771,7 +584,9 @@ bool UsermodCinemagic::handleButton(uint8_t b) {
             // if this is second release within 350ms it is a double press (buttonWaitTime!=0)
             //TODO: handleButton() handles button 0 without preset in a different way for double click
             if (doublePress) {
+#ifdef USERMOD_CINEMAGIC_OLED
                 display.networkOverlay(PSTR("NETWORK INFO"), 7000);
+#endif
                 handled = true;
             } else {
                 buttonWaitTime = now;
@@ -792,7 +607,9 @@ bool UsermodCinemagic::handleButton(uint8_t b) {
 }
 
 void UsermodCinemagic::onUpdateBegin(bool init) {
+#ifdef USERMOD_CINEMAGIC_OLED
     display.onUpdateBegin(init);
+#endif
 }
 
 void UsermodCinemagic::appendConfigData() {
@@ -835,9 +652,11 @@ void UsermodCinemagic::addToConfig(JsonObject &root) {
     top[FPSTR(_capacity)] = mCurrentCapacity;
     top[FPSTR(_cycle)] = mCycle;
 
-    top["type"] = display.type;
+#ifdef USERMOD_CINEMAGIC_OLED
     JsonArray io_pin = top.createNestedArray("pin");
     for (int i = 0; i < 3; i++) io_pin.add(display.ioPin[i]);
+    top["type"] = display.type;
+    DEBUG_PRINTLN(F("4 Line Display config saved."));
     top[FPSTR(display._flip)] = (bool) display.flip;
     top[FPSTR(display._contrast)] = display.contrast;
     top[FPSTR(display._contrastFix)] = (bool) display.contrastFix;
@@ -846,7 +665,7 @@ void UsermodCinemagic::addToConfig(JsonObject &root) {
     top[FPSTR(display._clockMode)] = (bool) display.clockMode;
     top[FPSTR(display._showSeconds)] = (bool) display.showSeconds;
     top[FPSTR(display._busClkFrequency)] = display.ioFrequency / 1000;
-    DEBUG_PRINTLN(F("4 Line Display config saved."));
+#endif
 }
 
 /*
@@ -858,10 +677,11 @@ void UsermodCinemagic::addToConfig(JsonObject &root) {
   * If you don't know what that is, don't fret. It most likely doesn't affect your use case :)
   */
 bool UsermodCinemagic::readFromConfig(JsonObject &root) {
+#ifdef USERMOD_CINEMAGIC_OLED
     DisplayType newType = display.type;
     int8_t oldPin[3];
     for (byte i = 0; i < 3; i++) oldPin[i] = display.ioPin[i];
-
+#endif
     JsonObject top = root[FPSTR(_name)];
     if (top.isNull()) {
         DEBUG_PRINT(FPSTR(_name));
@@ -876,6 +696,7 @@ bool UsermodCinemagic::readFromConfig(JsonObject &root) {
     mCycle = top[FPSTR(_cycle)] | 0.0;
 
     // read display configurations
+#ifdef USERMOD_CINEMAGIC_OLED
     newType = top["type"] | newType;
     for (byte i = 0; i < 3; i++) display.ioPin[i] = top["pin"][i] | display.ioPin[i];
     display.flip = top[FPSTR(display._flip)] | display.flip;
@@ -905,6 +726,8 @@ bool UsermodCinemagic::readFromConfig(JsonObject &root) {
     }
     // use "return !top["newestParameter"].isNull();" when updating Usermod with new features
     return !top[FPSTR(display._contrastFix)].isNull();
+#endif
+    return true;
 }
 
 void UsermodCinemagic::saveToConfig() {

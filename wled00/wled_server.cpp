@@ -1,8 +1,9 @@
 #include "wled.h"
 
-#include "html_ui.h"
 #ifdef WLED_ENABLE_SIMPLE_UI
   #include "html_simple.h"
+#else
+#include "html_ui.h"
 #endif
 #include "html_settings.h"
 #include "html_other.h"
@@ -448,11 +449,10 @@ void serveIndex(AsyncWebServerRequest* request)
 
   AsyncWebServerResponse *response;
 #ifdef WLED_ENABLE_SIMPLE_UI
-  if (simplifiedUI)
     response = request->beginResponse_P(200, "text/html", PAGE_simple, PAGE_simple_L);
-  else
+#else
+      response = request->beginResponse_P(200, "text/html", PAGE_index, PAGE_index_L);
 #endif
-    response = request->beginResponse_P(200, "text/html", PAGE_index, PAGE_index_L);
 
   response->addHeader(FPSTR(s_content_enc),"gzip");
   setStaticContentCacheHeaders(response);

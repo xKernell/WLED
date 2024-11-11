@@ -788,7 +788,7 @@ input[type=range]::-moz-range-thumb {
 	font-size: 19px;
 	color: var(--c-d);
 	cursor: pointer;
-	border-radius: 25px;
+	border-radius: 8px;
 	transition-duration: 0.3s;
 	-webkit-backface-visibility: hidden;
 	-webkit-transform:translate3d(0,0,0);
@@ -1276,7 +1276,7 @@ TD .checkmark, TD .radiomark {
 	overflow: hidden;
 	position: -webkit-sticky;
 	position: sticky;
-	border-radius: 21px;
+	border-radius: 8px;
 	margin: 13px auto 0;
 	min-height: 40px;
 	border: 1px solid var(--c-2);
