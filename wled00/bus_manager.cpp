@@ -387,6 +387,10 @@ void BusPwm::show() {
   for (uint8_t i = 0; i < numPins; i++) {
     uint8_t scaled = (_data[i] * _bri) / 255;
     if (_reversed) scaled = 255 - scaled;
+
+    #ifdef CINEMAGIC_PWM_CAP_PERCENTAGE
+    scaled = scaled * CINEMAGIC_PWM_CAP_PERCENTAGE / 100;
+    #endif
     #ifdef ESP8266
     analogWrite(_pins[i], scaled);
     #else

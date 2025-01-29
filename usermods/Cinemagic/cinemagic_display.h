@@ -5,43 +5,21 @@
 #ifdef USERMOD_CINEMAGIC_OLED
 #undef U8X8_NO_HW_I2C // borrowed from WLEDMM: we do want I2C hardware drivers - if possible
 
+#include "cinemagic_shared.h"
 #include <U8x8lib.h> // from https://github.com/olikraus/u8g2/
 #include "4LD_wled_fonts.c"
-
-#define LCD_ON_SEPRATE_THREAD
-#define SCREEN_TIMEOUT_MS  60*1000    // When to time out to the clock or blank the screen, if SLEEP_MODE_ENABLED.
-#define REFRESH_RATE_MS 100 // Minimum time between redrawing screen in ms
-#define LINE_BUFFER_SIZE            16+1
-#define MAX_JSON_CHARS              19+1
-#define MAX_MODE_LINE_SPACE         13+1
-
-#if CONFIG_FREERTOS_UNICORE
-//#define ARDUINO_RUNNING_CORE 0
-#else
-#define ARDUINO_RUNNING_CORE 1
-#endif
 
 static TaskHandle_t Display_Task = nullptr;
 
 void DisplayTaskCode(void *parameter);
 
-typedef enum {
-    NONE = 0,
-    SSD1306,          // U8X8_SSD1306_128X32_UNIVISION_HW_I2C
-    SH1106,           // U8X8_SH1106_128X64_WINSTAR_HW_I2C
-    SSD1306_64,       // U8X8_SSD1306_128X64_NONAME_HW_I2C
-    SSD1305,          // U8X8_SSD1305_128X32_ADAFRUIT_HW_I2C
-    SSD1305_64,       // U8X8_SSD1305_128X64_ADAFRUIT_HW_I2C
-    SSD1306_SPI,      // U8X8_SSD1306_128X32_NONAME_HW_SPI
-    SSD1306_SPI64,    // U8X8_SSD1306_128X64_NONAME_HW_SPI
-    SSD1309_SPI64     // U8X8_SSD1309_128X64_NONAME0_4W_HW_SPI
-} DisplayType;
-
 class CinemagicDisplay {
 public:
 #if defined(LCD_ON_SEPRATE_THREAD)
-    CinemagicDisplay() { if (!instance) instance = this; }
+    explicit CinemagicDisplay(CMShared *sh) : shared(sh) { if (!instance) instance = this; }
     static CinemagicDisplay *getInstance(void) { return instance; }
+#else
+    explicit CinemagicDisplay(CMShared *sh) : shared(sh) {  };
 #endif
     DisplayType type = SSD1306;    // display type
     int8_t ioPin[3] = {-1, -1, -1}; // I2C pins: SCL, SDA
@@ -88,7 +66,7 @@ public:
 
     void drawStatusIcons();
 
-    void updateBatteryInfo(const float voltage, const float current, const float remainingCapacity, const uint8_t fullCapacity);
+//    void updateBatteryInfo(const int32_t voltage, const int32_t current, const int64_t remainingCapacity, const int64_t fullCapacity);
 
     void updateTemperatureInfo(const float temp1, const float temp2);
 
@@ -140,6 +118,7 @@ public:
 
     void onConfigUpdated(DisplayType newType, const int8_t* oldPin);
 private:
+    CMShared *shared;
     static CinemagicDisplay *instance;
 
     bool enabled {true};
@@ -244,7 +223,7 @@ void CinemagicDisplay::beginType2() {
     }
 
     startDisplay();
-    setFlipMode(true);
+    setFlipMode(false);
     setPowerSave(0);
     onUpdateBegin(false);  // create Display task
 }
@@ -1137,30 +1116,30 @@ void CinemagicDisplay::onConfigUpdated(DisplayType newType, const int8_t *oldPin
     if (needsRedraw && !wakeDisplay()) redraw(true);
     else overlayLogo(3500);
 }
-
-void CinemagicDisplay::updateBatteryInfo(const float voltage, const float current, const float remainingCapacity, const uint8_t fullCapacity) {
-#if defined(LCD_ON_SEPRATE_THREAD)
-    const unsigned long now = millis();
-    while (drawing && millis() - now < 125) delay(1); // wait if someone else is drawing
-    if (drawing || lockRedraw) return;
-#endif
-    if (overlayUntil == 0) {
-        lockRedraw = true;
-
-        char lineBuffer[10];
-        sprintf_P(lineBuffer, PSTR("V:%.2f"), voltage);
-        drawSmallString(10, lineHeight, lineBuffer, true);
-
-        sprintf_P(lineBuffer, "A:%.2fA", current);
-        drawSmallString(10, lineHeight * 2, lineBuffer, true);
-
-        IPAddress ip = knownIp;
-        sprintf_P(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
-        drawSmallString(10, lineHeight * 3, lineBuffer, true);
-
-        lockRedraw = false;
-    }
-}
+//
+//void CinemagicDisplay::updateBatteryInfo(const int32_t voltage, const int32_t current, const int64_t remainingCapacity, const int64_t fullCapacity) {
+//#if defined(LCD_ON_SEPRATE_THREAD)
+//    const unsigned long now = millis();
+//    while (drawing && millis() - now < 125) delay(1); // wait if someone else is drawing
+//    if (drawing || lockRedraw) return;
+//#endif
+//    if (overlayUntil == 0) {
+//        lockRedraw = true;
+//
+//        char lineBuffer[10];
+//        sprintf_P(lineBuffer, PSTR("V:%.2f"), voltage);
+//        drawSmallString(10, lineHeight, lineBuffer, true);
+//
+//        sprintf_P(lineBuffer, "A:%.2fA", current);
+//        drawSmallString(10, lineHeight * 2, lineBuffer, true);
+//
+//        IPAddress ip = knownIp;
+//        sprintf_P(lineBuffer, "IP:%d.%d", ip[2], ip[3]);
+//        drawSmallString(10, lineHeight * 3, lineBuffer, true);
+//
+//        lockRedraw = false;
+//    }
+//}
 
 void CinemagicDisplay::updateTemperatureInfo(const float temp1, const float temp2) {
 #if defined(LCD_ON_SEPRATE_THREAD)

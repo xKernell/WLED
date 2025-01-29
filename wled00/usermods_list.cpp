@@ -19,10 +19,6 @@
   #include "../usermods/Temperature/usermod_temperature.h"
 #endif
 
-#ifdef USERMOD_CINEMAGIC_TEMPERATURE
-#include "../usermods/CinemagicTemperature/usermod_cinemagic_temperature.h"
-#endif
-
 #ifdef USERMOD_CINEMAGIC
 #include "../usermods/Cinemagic/usermod_cinemagic.h"
 #endif
@@ -228,9 +224,6 @@ void registerUsermods()
   usermods.add(new UsermodTemperature());
   #endif
 
-    #ifdef USERMOD_CINEMAGIC_TEMPERATURE
-        usermods.add(new UsermodCinemagicTemperature());
-    #endif
     #ifdef USERMOD_CINEMAGIC
         usermods.add(new UsermodCinemagic());
     #endif
