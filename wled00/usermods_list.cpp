@@ -270,13 +270,9 @@ void registerUsermods()
   UsermodManager::add(new UsermodBattery());
   #endif
 
-  #ifdef USERMOD_DALLASTEMPERATURE
-  UsermodManager::add(new UsermodTemperature());
-  #endif
-
-    #ifdef USERMOD_CINEMAGIC
-        usermods.add(new UsermodCinemagic());
-    #endif
+#ifdef USERMOD_CINEMAGIC
+UsermodManager::add(new UsermodCinemagic());
+#endif
 
   #ifdef USERMOD_SN_PHOTORESISTOR
   UsermodManager::add(new Usermod_SN_Photoresistor());

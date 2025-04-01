@@ -37,10 +37,10 @@ public:
 
 void CMTemperature::begin() {
     analogReadResolution(12); // Set the resolution to 12-bit
-    if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN >= 0 && pinManager.allocatePin(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, true, PinOwner::UM_CINEMAGIC)) {
+    if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN >= 0 && PinManager::allocatePin(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, true, PinOwner::UM_CINEMAGIC)) {
         pinMode(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN, INPUT);
     }
-    if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN >= 0 && pinManager.allocatePin(USERMOD_CINEMAGIC_TEMP_BOARD_PIN, true, PinOwner::UM_CINEMAGIC)) {
+    if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN >= 0 && PinManager::allocatePin(USERMOD_CINEMAGIC_TEMP_BOARD_PIN, true, PinOwner::UM_CINEMAGIC)) {
         pinMode(USERMOD_CINEMAGIC_TEMP_BOARD_PIN, INPUT);
     }
 }

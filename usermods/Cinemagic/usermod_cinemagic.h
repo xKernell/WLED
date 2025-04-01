@@ -50,6 +50,9 @@ private:
 #ifdef USERMOD_CINEMAGIC_BLE
     CMBLE ble{&shared};
 #endif
+#ifdef CINEMAGIC_FAN_PIN
+    uint8_t lastFanDuty = 0; // 0-255
+#endif
     bool enabled{true};
     bool mInited{false};
 
@@ -99,6 +102,13 @@ public:
 
 #ifdef USERMOD_CINEMAGIC_BLE
         ble.begin();
+#endif
+
+#ifdef CINEMAGIC_FAN_PIN
+    // Configure the LEDC PWM channel
+    ledcSetup(1, 25000, 8);
+    // Attach the channel to the pin
+    ledcAttachPin(CINEMAGIC_FAN_PIN, 1);
 #endif
 
         mInited = true;
@@ -156,7 +166,27 @@ public:
         ble.loop();
 #endif
 
+#ifdef CINEMAGIC_FAN_PIN
+        // Update only if changed
+        int currentBrightness = bri ;
+        int mappedDuty;
+        if (currentBrightness <= 1) {
+            // If brightness is 0, turn fan fully off
+            mappedDuty = 0;
+        } else {
+            // Otherwise, map [1..255] brightness to [80..255] duty
+            // (Adjust these values to taste)
+            mappedDuty = map(currentBrightness, 2, 255, 190, 255);
+        }
+
+        if (mappedDuty != lastFanDuty) {
+            lastFanDuty = mappedDuty;
+            ledcWrite(1, mappedDuty);
+        }
+#endif
+
     }
+
 
     void onUpdateBegin(bool init);
 

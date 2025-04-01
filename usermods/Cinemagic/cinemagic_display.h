@@ -239,7 +239,7 @@ void CinemagicDisplay::begin() {
             PinManagerPinType cspins[3] = {{ioPin[0], true},
                                            {ioPin[1], true},
                                            {ioPin[2], true}};
-            if (!pinManager.allocateMultiplePins(cspins, 3, PinOwner::UM_FourLineDisplay)) { type = NONE; }
+            if (!PinManager::allocateMultiplePins(cspins, 3, PinOwner::UM_FourLineDisplay)) { type = NONE; }
         }
     } else {
         if (i2c_scl < 0 || i2c_sda < 0) { type = NONE; }
@@ -283,7 +283,7 @@ void CinemagicDisplay::begin() {
     if (nullptr == u8x8) {
         DEBUG_PRINTLN(F("Display init failed."));
         if (isSPI) {
-            pinManager.deallocateMultiplePins((const uint8_t *) ioPin, 3, PinOwner::UM_FourLineDisplay);
+            PinManager::deallocateMultiplePins((const uint8_t *) ioPin, 3, PinOwner::UM_FourLineDisplay);
         }
         type = NONE;
         enabled = false;
@@ -1030,7 +1030,7 @@ void CinemagicDisplay::onConfigUpdated(DisplayType newType, const int8_t *oldPin
         bool newSPI = (newType == SSD1306_SPI || newType == SSD1306_SPI64 || newType == SSD1309_SPI64);
         if (isSPI) {
             if (pinsChanged || !newSPI)
-                pinManager.deallocateMultiplePins((const uint8_t *) oldPin, 3, PinOwner::UM_FourLineDisplay);
+                PinManager::deallocateMultiplePins((const uint8_t *) oldPin, 3, PinOwner::UM_FourLineDisplay);
             if (!newSPI) {
                 // was SPI but is no longer SPI
                 if (i2c_scl < 0 || i2c_sda < 0) { newType = NONE; }
@@ -1040,7 +1040,7 @@ void CinemagicDisplay::onConfigUpdated(DisplayType newType, const int8_t *oldPin
                                                {ioPin[1], true},
                                                {ioPin[2], true}};
                 if (ioPin[0] < 0 || ioPin[1] < 0 || ioPin[1] < 0) { newType = NONE; }
-                else if (!pinManager.allocateMultiplePins(cspins, 3,
+                else if (!PinManager::allocateMultiplePins(cspins, 3,
                                                           PinOwner::UM_FourLineDisplay)) { newType = NONE; }
             }
         } else if (newSPI) {
@@ -1052,7 +1052,7 @@ void CinemagicDisplay::onConfigUpdated(DisplayType newType, const int8_t *oldPin
                                              {ioPin[1], true},
                                              {ioPin[2], true}};
                 if (ioPin[0] < 0 || ioPin[1] < 0 || ioPin[1] < 0) { newType = NONE; }
-                else if (!pinManager.allocateMultiplePins(pins, 3,
+                else if (!PinManager::allocateMultiplePins(pins, 3,
                                                           PinOwner::UM_FourLineDisplay)) { newType = NONE; }
             }
         } else {

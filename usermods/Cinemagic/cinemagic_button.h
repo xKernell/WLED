@@ -58,7 +58,7 @@ private:
 void CMButton::begin(){
     // Initialize buttons
     for (uint8_t i = 0; i < numBtn; i++) {
-        if (pinManager.allocatePin(btnPin[i], false, PinOwner::UM_CINEMAGIC)) {
+        if (PinManager::allocatePin(btnPin[i], false, PinOwner::UM_CINEMAGIC)) {
             pinMode(btnPin[i], INPUT_PULLUP);
         }
     }
