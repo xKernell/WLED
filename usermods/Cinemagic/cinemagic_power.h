@@ -138,11 +138,32 @@ void CMPower::loop() {
         strip.setBrightness((bri * briMultiplier) / 100);
         updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
         strip.show();
+        delay(150);
     }
 #endif
 
 
+#ifdef BATTERY_STATE_BASE_ON_VOLTAGE
+    int delta = (shared->power.current * BATTERY_INTERNAL_R) / 10000;
+    int estimatedOCV = shared->power.voltage + delta;
 
+    // 3) Exponential smoothing on OCV for stability
+    static int smoothedOCV = 0;
+    if (smoothedOCV == 0) {
+        // first call
+        smoothedOCV = estimatedOCV;
+    }
+    // newSmoothed = (7*old + new) / 8  => alpha=1/8
+    smoothedOCV = (7 * smoothedOCV + estimatedOCV) / 8;
+
+    // 4) Clamp the smoothed voltage in [3.0..4.2] => [300..420]
+    int clampMin = BATTERY_MIN_VOLTAGE, clampMax = BATTERY_FULL_VOLTAGE;
+    int v = smoothedOCV;
+    if (v < clampMin) v = clampMin;
+    if (v > clampMax) v = clampMax;
+
+    shared->power.batteryPercentage = (v - clampMin) * 100 / (clampMax - clampMin);
+#else
     // Calculate consumed capacity (in mAh)
     int32_t current_mA = shared->power.current * 10;  // Current in mA
     float consumedCapacity = (float)current_mA * (float)elapsedMillis / TIME_SCALE;  // Result in mAh scaled
@@ -263,7 +284,7 @@ void CMPower::loop() {
     // Update shared variables
     shared->power.batteryPercentage = batteryPercentage;
     shared->power.batteryHealth = batteryHealth;
-
+#endif
     updateDisplayString();
     saveToFS();
 }

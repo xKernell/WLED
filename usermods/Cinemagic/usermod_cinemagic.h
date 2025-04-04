@@ -5,19 +5,27 @@
 #include "cinemagic_shared.h"
 
 #ifdef USERMOD_CINEMAGIC_OLED
+
 #include "cinemagic_display.h"
+
 #endif
 
 #ifdef USERMOD_CINEMAGIC_POWER
+
 #include "cinemagic_power.h"
+
 #endif
 
 #ifdef USERMOD_CINEMAGIC_TEMPERATURE
+
 #include "cinemagic_temperature.h"
+
 #endif
 
 #ifdef CINEMAGIC_WITH_3_BUTTON
+
 #include "cinemagic_button.h"
+
 #endif
 
 #ifdef USERMOD_CINEMAGIC_BLE
@@ -79,7 +87,8 @@ public:
         DEBUG_PRINTLN("Cinemagic user mod started");
 
 #ifdef USERMOD_CINEMAGIC_OLED
-        display.beginType2();
+        display.begin();
+//        display.beginType2();
 #endif
 
 #ifdef USERMOD_CINEMAGIC_POWER
@@ -98,6 +107,9 @@ public:
 
 #ifdef CINEMAGIC_WITH_3_BUTTON
         button.begin();
+        button.onAnyButtonPressed = [this]() {
+            DEBUG_PRINTF("Current View: %d \tCurrent Mode: %d \tCurrent Item: %d!\n", shared.currentView, shared.currentMode, shared.currentItem);
+        };
 #endif
 
 #ifdef USERMOD_CINEMAGIC_BLE
@@ -105,10 +117,10 @@ public:
 #endif
 
 #ifdef CINEMAGIC_FAN_PIN
-    // Configure the LEDC PWM channel
-    ledcSetup(1, 25000, 8);
-    // Attach the channel to the pin
-    ledcAttachPin(CINEMAGIC_FAN_PIN, 1);
+        // Configure the LEDC PWM channel
+        ledcSetup(1, 25000, 8);
+        // Attach the channel to the pin
+        ledcAttachPin(CINEMAGIC_FAN_PIN, 1);
 #endif
 
         mInited = true;
@@ -120,6 +132,7 @@ public:
      * Use it to initialize network interfaces
      */
     void connected() override {
+        shared.apMode = apActive;
         shared.ssid = apActive ? apSSID : WiFi.SSID();
         shared.ip = Network.localIP();
 #ifdef USERMOD_CINEMAGIC_OLED
@@ -128,52 +141,55 @@ public:
     }
 
     void loop() {
+//        unsigned long now = 0;
+//        int cmPower = 0;
+//        int cmTemperature = 0;
+//        int cmDisplay = 0;
+//        int cmButton = 0;
+//        int cmBle = 0;
+//        int cmFan = 0;
         // if usermod is disabled or called during strip updating just exit
         // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
         if (!enabled || strip.isUpdating()) return;
 
-//        // Max brightness mode handling
-//        if (inMaxBrightnessMode) {
-//            if (millis() - maxBrightnessStartTime > MAX_BRIGHTNESS_DURATION ||
-//                shared.temp.board > USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100) {
-//                // Reduce brightness
-//                bri = previousBrightness;
-//                strip.setBrightness(bri);
-//                updateInterfaces(CALL_MODE_DIRECT_CHANGE);
-//                inMaxBrightnessMode = false;
-//            }
-//        }
-
         // power measurement
 #ifdef USERMOD_CINEMAGIC_POWER
+//        now = millis();
         power.loop();
+//        cmPower = millis() - now;
 #endif
 
         // temperature
 #ifdef USERMOD_CINEMAGIC_TEMPERATURE
+//        now = millis();
         temperature.loop();
+//        cmTemperature = millis() - now;
 #endif
 
         // display update
 #ifdef USERMOD_CINEMAGIC_OLED
+//        now = millis();
         display.loop();
+//        cmDisplay = millis() - now;
 #endif
 
 #ifdef CINEMAGIC_WITH_3_BUTTON
+//        now = millis();
         button.loop();
+//        cmButton = millis() - now;
 #endif
 #ifdef USERMOD_CINEMAGIC_BLE
-        ble.loop();
+        //now = millis();
+      ble.loop();
+        //cmBle = millis() - now;
 #endif
 
 #ifdef CINEMAGIC_FAN_PIN
+//        now = millis();
         // Update only if changed
-        int currentBrightness = bri ;
-        int mappedDuty;
-        if (currentBrightness <= 1) {
-            // If brightness is 0, turn fan fully off
-            mappedDuty = 0;
-        } else {
+        int currentBrightness = bri;
+        int mappedDuty = 0;
+        if (currentBrightness > 0 && shared.temp.led > 4000) {
             // Otherwise, map [1..255] brightness to [80..255] duty
             // (Adjust these values to taste)
             mappedDuty = map(currentBrightness, 2, 255, 190, 255);
@@ -183,8 +199,11 @@ public:
             lastFanDuty = mappedDuty;
             ledcWrite(1, mappedDuty);
         }
+//        cmFan = millis() - now;
 #endif
-
+//        DEBUG_PRINTF("CINEMAGIC Loop (%dms): Power: %dms \tTemperature: %dms \tDisplay: %dms \tButton: %dms \tBLE: %dms \tFAN: %dms\n",
+//                     cmPower + cmTemperature + cmDisplay + cmButton + cmBle + cmFan,
+//                     cmPower, cmTemperature, cmDisplay, cmButton, cmBle, cmFan);
     }
 
 

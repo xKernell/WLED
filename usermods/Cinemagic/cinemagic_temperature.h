@@ -32,6 +32,7 @@ public:
         strip.setBrightness((bri * briMultiplier) / 100);
         updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
         strip.show();
+        delay(150);
     }
 };
 
@@ -87,6 +88,7 @@ void CMTemperature::loop() {
                 shared->temp.board = 0;
             }
         }
+        shared->temp.max = max(shared->temp.led, shared->temp.board);
 
 #ifdef USERMOD_CINEMAGIC_CRITICAL_TEMP
         if (shared->temp.board > USERMOD_CINEMAGIC_CRITICAL_TEMP * 100){
@@ -102,13 +104,13 @@ void CMTemperature::loop() {
         if (millis() - lastTempBriAdjust > 60000 && shared->tempReduceCause != CRITICAL_TEMPERATURE){
             static int16_t briMultiplierInt = briMultiplier;  // Retain as integer with one decimal place
             bool updateRequired = false;  // Track if update is needed
-            int16_t maxTemp = max(shared->temp.led, shared->temp.board);
 
-            if (maxTemp > USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100 + 100) {
+
+            if (shared->temp.max > USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100 + 100) {
                 briMultiplierInt = max((briMultiplierInt * 95) / 100, 10);  // Ensure it doesn't go below 10.0 (represented as 100)
                 updateRequired = true;
                 shared->tempReduceCause = TEMPERATURE;
-            } else if (maxTemp < USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100 - 100 && briMultiplierInt < 100 && shared->tempReduceCause == TEMPERATURE) {
+            } else if (shared->temp.max < USERMOD_CINEMAGIC_MAX_SAFE_TEMP * 100 - 100 && briMultiplierInt < 100 && shared->tempReduceCause == TEMPERATURE) {
                 briMultiplierInt = min((briMultiplierInt * 105) / 100, 100);  // Ensure it doesn't exceed 100.0 (represented as 1000)
                 updateRequired = true;
                 if (briMultiplierInt == 100){

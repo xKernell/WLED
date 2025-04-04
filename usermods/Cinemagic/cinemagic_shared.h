@@ -7,19 +7,49 @@
 
 #include "Arduino.h"
 
+static const uint16_t WARMEST_KELVIN = 1900;
+static const uint16_t COLDEST_KELVIN = 6000;
+
 // View management
 enum DisplayView {
+    NO_VIEW = 0,
+    STARTUP_VIEW,
     MAIN_VIEW,
-    MODE_SELECTION_VIEW,
     BATTERY_VIEW,
     TEMPERATURE_VIEW,
     NETWORK_VIEW,
-    CCT_SETTINGS_VIEW,
-    HSI_SETTINGS_VIEW,
-    EFFECTS_SETTINGS_VIEW,
-    MAX_BRIGHTNESS_VIEW,
-    SETTINGS_VIEW,
-    TOTAL_VIEWS
+    SETTING_VIEW,
+    NODE_VIEWS
+};
+enum DisplayItem {
+    NO_ITEM = 0,
+    BRIGHTNESS,
+    COLOR_TEMPERATURE,
+    HSI,
+    EFFECT,
+    PALETTE,
+    EFFECT_SPEED,
+    EFFECT_INTENSITY
+};
+enum DisplayMode {
+    CCT_MODE = 0,
+    HSI_MODE,
+    EFFECT_MODE,
+    PRESET_MODE
+};
+#define MAX_MODE_ITEMS 6
+static const DisplayItem DisplayModeItems[4][MAX_MODE_ITEMS] = {
+        // CCT_MODE
+        { BRIGHTNESS, COLOR_TEMPERATURE, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM },
+
+        // HSI_MODE
+        { BRIGHTNESS, HSI, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM },
+
+        // EFFECT_MODE
+        { BRIGHTNESS, EFFECT, EFFECT_SPEED, PALETTE, NO_ITEM, NO_ITEM },
+
+        // PRESET_MODE
+        { BRIGHTNESS, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM }
 };
 
 enum BrightnessDecreaseCause : uint8_t {
@@ -63,16 +93,22 @@ enum BrightnessDecreaseCause : uint8_t {
 #endif
 
 #ifndef BATTERY_FULL_VOLTAGE
-#define BATTERY_FULL_VOLTAGE 419          // Full battery voltage in volts
+#define BATTERY_FULL_VOLTAGE 412          // Full battery voltage in volts
 #endif
 
 #ifndef BATTERY_MIN_VOLTAGE
 #define BATTERY_MIN_VOLTAGE 305            // Minimum battery voltage in volts
 #endif
 
+#ifndef BATTERY_INTERNAL_R
+#define BATTERY_INTERNAL_R 30            // mOhms
+#endif
+
 #ifndef CAPACITY_RECALIBRATION_CYCLES
 #define CAPACITY_RECALIBRATION_CYCLES 20    // Number of cycles before recalibration
 #endif
+
+#define BATTERY_STATE_BASE_ON_VOLTAGE
 
 // Define scaling factors
 #ifndef VOLTAGE_SCALE
@@ -132,6 +168,7 @@ struct CMPowerModel {
 #endif
 
 struct CMTemperatureModel {
+    int16_t max{0};
     int16_t cpu{0};
     int16_t led{0};
     int16_t board{0};
@@ -146,11 +183,17 @@ struct CMShared {
 #ifdef USERMOD_CINEMAGIC_TEMPERATURE
     CMTemperatureModel temp;
 #endif
+    bool apMode = false;
     String ssid = apSSID;
     IPAddress ip = IPAddress(4, 3, 2, 1);
     BrightnessDecreaseCause tempReduceCause{NO_CAUSE};
 
-    DisplayView currentView = MAIN_VIEW;
+    DisplayView currentView = STARTUP_VIEW;
+    DisplayItem currentItem = BRIGHTNESS;
+    DisplayMode currentMode = CCT_MODE;
+
+    uint8_t ledCCTTemp = 20;
+    uint16_t ledHue = 150;
 
     const char *getTempReduceCauseString() {
         switch (tempReduceCause) {
@@ -171,13 +214,14 @@ struct CMShared {
 
 
 #ifdef USERMOD_CINEMAGIC_OLED
+#define SCREEN_ADDRESS  0x3C
 
-#define LCD_ON_SEPRATE_THREAD
+//#define LCD_ON_SEPRATE_THREAD
 #define SCREEN_TIMEOUT_MS  60*1000    // When to time out to the clock or blank the screen, if SLEEP_MODE_ENABLED.
 #define REFRESH_RATE_MS 100 // Minimum time between redrawing screen in ms
 #define LINE_BUFFER_SIZE            16+1
 #define MAX_JSON_CHARS              19+1
-#define MAX_MODE_LINE_SPACE         13+1
+#define MAX_MODE_LINE_SPACE         7+1
 
 #if CONFIG_FREERTOS_UNICORE
 //#define ARDUINO_RUNNING_CORE 0
