@@ -15,8 +15,7 @@ enum DisplayView {
     NO_VIEW = 0,
     STARTUP_VIEW,
     MAIN_VIEW,
-    BATTERY_VIEW,
-    TEMPERATURE_VIEW,
+    DEVICE_INFO,
     NETWORK_VIEW,
     SETTING_VIEW,
     NODE_VIEWS
@@ -40,16 +39,21 @@ enum DisplayMode {
 #define MAX_MODE_ITEMS 6
 static const DisplayItem DisplayModeItems[4][MAX_MODE_ITEMS] = {
         // CCT_MODE
-        { BRIGHTNESS, COLOR_TEMPERATURE, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM },
+        {BRIGHTNESS, COLOR_TEMPERATURE, NO_ITEM,      NO_ITEM, NO_ITEM, NO_ITEM},
 
         // HSI_MODE
-        { BRIGHTNESS, HSI, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM },
+        {BRIGHTNESS, HSI,               NO_ITEM,      NO_ITEM, NO_ITEM, NO_ITEM},
 
         // EFFECT_MODE
-        { BRIGHTNESS, EFFECT, EFFECT_SPEED, PALETTE, NO_ITEM, NO_ITEM },
+        {BRIGHTNESS, EFFECT,            EFFECT_SPEED, PALETTE, NO_ITEM, NO_ITEM},
 
         // PRESET_MODE
-        { BRIGHTNESS, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM, NO_ITEM }
+        {BRIGHTNESS, NO_ITEM,           NO_ITEM,      NO_ITEM, NO_ITEM, NO_ITEM}
+};
+
+#define MAX_SWITCHABLE_VIEW 4
+static const DisplayView SwitchableViewItems[MAX_SWITCHABLE_VIEW] = {
+        MAIN_VIEW, NETWORK_VIEW, DEVICE_INFO, SETTING_VIEW
 };
 
 enum BrightnessDecreaseCause : uint8_t {
@@ -101,7 +105,7 @@ enum BrightnessDecreaseCause : uint8_t {
 #endif
 
 #ifndef BATTERY_INTERNAL_R
-#define BATTERY_INTERNAL_R 30            // mOhms
+#define BATTERY_INTERNAL_R 500            // mOhms
 #endif
 
 #ifndef CAPACITY_RECALIBRATION_CYCLES
@@ -125,6 +129,23 @@ enum BrightnessDecreaseCause : uint8_t {
 
 #ifndef BATTERY_FULL_VOLTAGE_HOLD_TIME
 #define BATTERY_FULL_VOLTAGE_HOLD_TIME 60*1000 // 2.5min
+#endif
+
+// fan settings
+#ifndef CINEMAGIC_FAN_START_TEMP
+#define CINEMAGIC_FAN_START_TEMP 4200
+#endif
+
+#ifndef CINEMAGIC_FAN_MAX_SPEED_TEMP
+#define CINEMAGIC_FAN_MAX_SPEED_TEMP 5300
+#endif
+
+#ifndef CINEMAGIC_FAN_MIN_DUTY
+#define CINEMAGIC_FAN_MIN_DUTY 227
+#endif
+
+#ifndef CINEMAGIC_FAN_MAX_DUTY
+#define CINEMAGIC_FAN_MAX_DUTY 255
 #endif
 
 enum CapacityMeasurementState : uint8_t {
@@ -176,6 +197,16 @@ struct CMTemperatureModel {
 };
 #endif
 
+struct CMControl {
+    DisplayView currentView = STARTUP_VIEW;
+    DisplayItem currentItem = BRIGHTNESS;
+    DisplayMode currentMode = CCT_MODE;
+
+    uint8_t ledCCTTemp = 20;
+    uint16_t ledHue = 150;
+    uint8_t brightness = 10;
+};
+
 struct CMShared {
 #ifdef USERMOD_CINEMAGIC_POWER
     CMPowerModel power;
@@ -183,17 +214,10 @@ struct CMShared {
 #ifdef USERMOD_CINEMAGIC_TEMPERATURE
     CMTemperatureModel temp;
 #endif
-    bool apMode = false;
     String ssid = apSSID;
     IPAddress ip = IPAddress(4, 3, 2, 1);
     BrightnessDecreaseCause tempReduceCause{NO_CAUSE};
-
-    DisplayView currentView = STARTUP_VIEW;
-    DisplayItem currentItem = BRIGHTNESS;
-    DisplayMode currentMode = CCT_MODE;
-
-    uint8_t ledCCTTemp = 20;
-    uint16_t ledHue = 150;
+    CMControl control;
 
     const char *getTempReduceCauseString() {
         switch (tempReduceCause) {
@@ -242,5 +266,14 @@ typedef enum {
 } DisplayType;
 
 #endif
+
+void cmUpdateStrip() {
+    if (strip.isUpdating())
+        return;
+
+    colorUpdated(CALL_MODE_DIRECT_CHANGE);
+    updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
+    strip.show();
+}
 
 #endif //WLED_CINEMAGIC_SHARED_H

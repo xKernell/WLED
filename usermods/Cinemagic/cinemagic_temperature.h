@@ -30,9 +30,8 @@ public:
     void updateBrightnessCap(const int16_t bright){
         briMultiplier = static_cast<byte>(bright);  // Convert back to integer percentage (0-100)
         strip.setBrightness((bri * briMultiplier) / 100);
-        updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
-        strip.show();
-        delay(150);
+        cmUpdateStrip();
+        delay(100);
     }
 };
 
@@ -52,7 +51,7 @@ void CMTemperature::loop() {
 
         const uint32_t R25 = 10000;        // Resistance at 25°C (10k ohms)
         const uint32_t B = 3950;           // B constant
-        const uint32_t ADC_MAX = 4095;     // 12-bit ADC maximum value
+        const float ADC_MAX = 4095.f;     // 12-bit ADC maximum value
 
         uint16_t analogValue;
         float resistance, tempK, temperatureC;
@@ -66,26 +65,26 @@ void CMTemperature::loop() {
         if (USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN > -1) {
             analogValue = analogRead(USERMOD_CINEMAGIC_TEMP_LEDPANEL_PIN);
             if (analogValue == 0) analogValue = 1; // Prevent division by zero
-            resistance = 10000.0f * (ADC_MAX / analogValue - 1.0f);
+            resistance = 10000.0f * (ADC_MAX / (float)analogValue - 1.0f);
             tempK = 1.0f / ((logf(resistance / R25) / B) + (1.0f / 298.15f));
             temperatureC = tempK - 273.15f;
             temperatureC_x100 = static_cast<int16_t>(temperatureC * 100.0f);
             shared->temp.led = -temperatureC_x100 + 4700; // mTemp1 in 0.01°C units
             if (shared->temp.led > 20000){
-                shared->temp.led = 0;
+                shared->temp.led = -30000;
             }
         }
 
         if (USERMOD_CINEMAGIC_TEMP_BOARD_PIN > -1) {
             analogValue = analogRead(USERMOD_CINEMAGIC_TEMP_BOARD_PIN);
             if (analogValue == 0) analogValue = 1; // Prevent division by zero
-            resistance = 10000.0f * (ADC_MAX / analogValue - 1.0f);
+            resistance = 10000.0f * (ADC_MAX / (float)analogValue - 1.0f);
             tempK = 1.0f / ((logf(resistance / R25) / B) + (1.0f / 298.15f));
             temperatureC = tempK - 273.15f;
             temperatureC_x100 = static_cast<int16_t>(temperatureC * 100.0f);
             shared->temp.board = -temperatureC_x100 + 4700; // mTemp2 in 0.01°C units
             if (shared->temp.board > 20000){
-                shared->temp.board = 0;
+                shared->temp.board = -30000;
             }
         }
         shared->temp.max = max(shared->temp.led, shared->temp.board);
