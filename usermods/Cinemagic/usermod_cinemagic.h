@@ -138,6 +138,7 @@ public:
         ledcAttachPin(CINEMAGIC_FAN_PIN, 1);
 #endif
 
+        shared.ssid = apSSID;
         mInited = true;
     }
 
@@ -146,7 +147,7 @@ public:
      * connected() is called every time the WiFi is (re)connected
      * Use it to initialize network interfaces
      */
-    void connected() override {
+    void connected() {
         shared.ssid = apActive ? apSSID : WiFi.SSID();
         shared.ip = Network.localIP();
 #ifdef USERMOD_CINEMAGIC_OLED

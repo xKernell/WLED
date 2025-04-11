@@ -12,7 +12,8 @@
 
 class CinemagicDisplay {
 public:
-    explicit CinemagicDisplay(CMShared *sh) : shared(sh) {};
+    explicit CinemagicDisplay(CMShared *sh) : shared(sh) {
+    };
 
     void begin();
 
@@ -50,6 +51,11 @@ private:
     void showDeviceInfoView();
 
     String getEffectOrPalletName(int inputEffPal, const char *qstring);
+
+    void printScrolling(uint8_t col, uint8_t row,
+                        const char *label,
+                        const char *text,
+                        uint16_t msPerStep = 250);
 };
 
 void CinemagicDisplay::begin() {
@@ -93,7 +99,6 @@ void CinemagicDisplay::loop() {
         case NODE_VIEWS:
             break;
     }
-
 }
 
 void CinemagicDisplay::showStartupScreen() {
@@ -312,29 +317,32 @@ void CinemagicDisplay::showNetworkView() {
     }
     showStatusBar();
 
-    u8x8->setCursor(0, 0);
+    u8x8->setCursor(0, 10);
 
-    if (!isDrawn || lastAPModeNetwork != apActive){
+    if (!isDrawn || lastAPModeNetwork != apActive) {
         lastAPModeNetwork = apActive;
-        if (apActive) {
-            u8x8->println("AP Mode!");
-            u8x8->print("SSID: ");
-            u8x8->println(shared->ssid);
-            u8x8->print("Pass: ");
-            u8x8->println(apPass);
-        } else {
-            u8x8->println("WiFi Mode");
-            u8x8->print("SSID: ");
-            u8x8->println(shared->ssid);
 
-            u8x8->print("IP: ");
-            u8x8->println(shared->ip.toString().c_str());
-        }
+        u8x8->setFont(u8x8_font_torussansbold8_r);
+        if (apActive) u8x8->draw1x2String(4, 2, "AP MODE");
+        else u8x8->draw1x2String(3, 2, "WIFI MODE");
+    }
+    u8x8->setFont(u8x8_font_chroma48medium8_r);
+
+    if (apActive) {
+        u8x8->draw1x2String(4, 2, "AP MODE");
+                u8x8->draw1x2String(3, 2, "WIFI MODE");
+        u8x8->setFont(u8x8_font_chroma48medium8_r);
+        printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
+        printScrolling(0, 4, "Pass: ", apPass);
+    } else {
+        u8x8->draw1x2String(3, 2, "WIFI MODE");
+        u8x8->setFont(u8x8_font_chroma48medium8_r);
+        printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
+        printScrolling(0, 5, "IP: ", shared->ip.toString().c_str());
     }
 }
 
 void CinemagicDisplay::showDeviceInfoView() {
-
 }
 
 String CinemagicDisplay::getEffectOrPalletName(int inputEffPal, const char *qstring) {
@@ -350,12 +358,50 @@ String CinemagicDisplay::getEffectOrPalletName(int inputEffPal, const char *qstr
         for (byte i = 5; i <= printedChars; i++) lineBuffer[i - 5] = lineBuffer[i]; //include '\0'
         printedChars -= 5;
     }
-    char smallBuffer3[MAX_MODE_LINE_SPACE + 1];          // uses 1x1 icon for mode/palette
+    char smallBuffer3[MAX_MODE_LINE_SPACE + 1]; // uses 1x1 icon for mode/palette
     uint8_t smallChars3 = 0;
     for (uint8_t i = 0; i < MAX_MODE_LINE_SPACE; i++)
         smallBuffer3[smallChars3++] = (i >= printedChars) ? ' ' : lineBuffer[i];
     smallBuffer3[smallChars3] = 0;
     return smallBuffer3;
+}
+
+void CinemagicDisplay::printScrolling(uint8_t col, uint8_t row,
+                                      const char *label,
+                                      const char *text,
+                                      uint16_t msPerStep) {
+    const uint8_t COLS = 16; // e.g. 16
+    const uint8_t labLen = strlen(label);
+    const uint8_t avail = (col + labLen >= COLS) ? 0 : COLS - col - labLen;
+
+    u8x8->setCursor(col, row);
+    u8x8->print(label);
+
+    if (avail == 0) return; // no space left
+
+    const uint8_t txtLen = strlen(text);
+
+    if (txtLen <= avail) {
+        /* fits → print once and pad with blanks */
+        u8x8->print(text);
+        for (uint8_t i = txtLen; i < avail; i++) u8x8->print(' ');
+    } else {
+        /* scroll --------------------------------------------------------- */
+        static const uint8_t GAP = 2; // blank columns between repeats
+        const uint32_t step = (millis() / msPerStep) % (txtLen + GAP);
+        char buf[17]; // max 16 cols + '\0'
+
+        for (uint8_t i = 0; i < avail; i++) {
+            uint16_t src = step + i;
+            char c;
+            if (src < txtLen) c = text[src];
+            else if (src < txtLen + GAP) c = ' '; // gap
+            else c = text[src - (txtLen + GAP)];
+            buf[i] = c;
+        }
+        buf[avail] = '\0';
+        u8x8->print(buf);
+    }
 }
 
 #endif
