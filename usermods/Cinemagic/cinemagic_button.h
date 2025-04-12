@@ -36,7 +36,8 @@ class CMButton {
 public:
     std::function<void()> onAnyButtonPressed;
 
-    explicit CMButton(CMShared *sh) : shared(sh) {}
+    explicit CMButton(CMShared *sh) : shared(sh) {
+    }
 
     void begin();
 
@@ -75,6 +76,12 @@ private:
     void setHue(uint16_t hueDeg);
 
     void forceEnableAP();
+
+    void connectToWifi();
+
+    void stepEffect(int8_t dir);
+
+    void stepPal(int8_t dir);
 };
 
 void CMButton::begin() {
@@ -84,7 +91,6 @@ void CMButton::begin() {
             pinMode(btnPin[i], INPUT_PULLUP);
         }
     }
-
 }
 
 void CMButton::loop() {
@@ -135,7 +141,6 @@ void CMButton::handleButton(uint8_t b) {
         if (onAnyButtonPressed) onAnyButtonPressed();
         lastPressTime[b] = 0;
     }
-
 }
 
 void CMButton::handleSinglePress(uint8_t b) {
@@ -149,6 +154,15 @@ void CMButton::handleSinglePress(uint8_t b) {
                 setItemValue(2, false);
             } else if (b == 0) {
                 setNextItemIndex();
+            }
+            break;
+        case NETWORK_VIEW:
+            if (b == 1 || b == 2) {
+                if (apActive) {
+                    connectToWifi();
+                } else {
+                    forceEnableAP();
+                }
             }
             break;
     }
@@ -285,6 +299,24 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
             cmUpdateStrip();
             delay(100);
             break;
+        case EFFECT:
+            if (increase) {
+                stepEffect(+1);
+            } else {
+                stepEffect(-1);
+            }
+            cmUpdateStrip();
+            delay(100);
+            break;
+        case PALETTE:
+            if (increase) {
+                stepPal(+1);
+            } else {
+                stepPal(-1);
+            }
+            cmUpdateStrip();
+            delay(100);
+            break;
     }
 }
 
@@ -339,7 +371,7 @@ void CMButton::setColorTemperature(uint8_t percent) {
     } else if (chanCount == 4) {
         // **RGBW**
         byte rgb[4];
-        colorKtoRGB(kelvin, rgb);  // {r,g,b,0}
+        colorKtoRGB(kelvin, rgb); // {r,g,b,0}
         col[0] = rgb[0];
         col[1] = rgb[1];
         col[2] = rgb[2];
@@ -351,9 +383,9 @@ void CMButton::setColorTemperature(uint8_t percent) {
         // We'll set RGB=0, use the same logic as the 2-channel CCT
         uint8_t warmVal = 255 - map(percent, 0, 100, 0, 255);
         uint8_t coldVal = map(percent, 0, 100, 0, 255);
-        col[0] = 0;  // R
-        col[1] = 0;  // G
-        col[2] = 0;  // B
+        col[0] = 0; // R
+        col[1] = 0; // G
+        col[2] = 0; // B
         col[3] = warmVal;
         col[4] = coldVal;
     } else {
@@ -399,7 +431,7 @@ void CMButton::setHue(uint16_t hueDeg) {
         uint16_t luma = (77UL * rgbTmp[0] + 150UL * rgbTmp[1] + 29UL * rgbTmp[2]) >> 8;
         // You could convert that to a warm/cold ratio, but that's up to your design.
         col[0] = luma; // warm
-        col[1] = 0;    // cold
+        col[1] = 0; // cold
     } else if (chanCount == 3) {
         // **RGB**
         col[0] = rgbTmp[0];
@@ -424,11 +456,49 @@ void CMButton::setHue(uint16_t hueDeg) {
     } else {
         // fallback or unknown config
     }
-
 }
 
 void CMButton::forceEnableAP() {
+    apBehavior = AP_BEHAVIOR_ALWAYS;
     WLED::instance().initAP(true);
 }
 
+void CMButton::connectToWifi() {
+    apBehavior = AP_BEHAVIOR_NO_CONN;
+    WLED::instance().initConnection();
+}
+
+void CMButton::stepEffect(int8_t dir) {
+    if (strip.getSegmentsNum() == 0) return; // nothing to do
+
+    uint8_t cur = strip.getMainSegment().mode; // current FX id
+    uint8_t cnt = strip.getModeCount(); // total FX
+    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
+
+    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
+        Segment &seg = strip.getSegment(i);
+        if (seg.isSelected()) seg.setMode(nxt);
+    }
+
+    stateUpdated(CALL_MODE_DIRECT_CHANGE); // saves & broadcasts
+    strip.trigger();
+}
+
+void CMButton::stepPal(int8_t dir) {
+    if (strip.getSegmentsNum() == 0) return;
+
+    uint8_t cur = strip.getMainSegment().palette; // current palette id
+    uint8_t cnt = strip.getPaletteCount(); // total palettes
+    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
+
+    /* set new palette on every SELECTED segment -------------------- */
+    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
+        Segment &seg = strip.getSegment(i);
+        if (seg.isSelected()) seg.setPalette(nxt);
+    }
+
+    /* tell WLED core & refresh ------------------------------------- */
+    stateUpdated(CALL_MODE_DIRECT_CHANGE);
+    strip.trigger();
+}
 #endif

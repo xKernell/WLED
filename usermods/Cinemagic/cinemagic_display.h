@@ -320,29 +320,56 @@ void CinemagicDisplay::showNetworkView() {
     u8x8->setCursor(0, 10);
 
     if (!isDrawn || lastAPModeNetwork != apActive) {
-        lastAPModeNetwork = apActive;
-
         u8x8->setFont(u8x8_font_torussansbold8_r);
-        if (apActive) u8x8->draw1x2String(4, 2, "AP MODE");
+        if (apActive) u8x8->draw1x2String(3, 2, " AP MODE ");
         else u8x8->draw1x2String(3, 2, "WIFI MODE");
     }
     u8x8->setFont(u8x8_font_chroma48medium8_r);
 
     if (apActive) {
-        u8x8->draw1x2String(4, 2, "AP MODE");
-                u8x8->draw1x2String(3, 2, "WIFI MODE");
         u8x8->setFont(u8x8_font_chroma48medium8_r);
         printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
-        printScrolling(0, 4, "Pass: ", apPass);
+        printScrolling(0, 5, "Pass: ", apPass);
     } else {
-        u8x8->draw1x2String(3, 2, "WIFI MODE");
         u8x8->setFont(u8x8_font_chroma48medium8_r);
         printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
         printScrolling(0, 5, "IP: ", shared->ip.toString().c_str());
     }
+
+    if (!isDrawn || lastAPModeNetwork != apActive) {
+        lastAPModeNetwork = apActive;
+        u8x8->setCursor(0, 6);
+        u8x8->setInverseFont(1);
+        if (apActive) {
+            u8x8->println(">CONNECT TO WIFI");
+        } else {
+            u8x8->println(">ENABLE AP      ");
+        }
+        u8x8->setInverseFont(0);
+    }
 }
 
 void CinemagicDisplay::showDeviceInfoView() {
+    static char buffer[12];
+    if (!isDrawn) {
+        u8x8->clearDisplay();
+    }
+    u8x8->setCursor(0, 0);
+    u8x8->setFont(u8x8_font_chroma48medium8_r);
+    printScrolling(0, 0, "Name: ", serverDescription);
+    snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.voltage) / 100.f));
+    printScrolling(0, 1, "Batt Volt: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.current) / 100.f));
+    printScrolling(0, 2, "Batt Curr: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fA", (float(shared->temp.led) / 100.f));
+    printScrolling(0, 3, "LED Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.board) / 100.f));
+    printScrolling(0, 4, "MB Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.cpu) / 100.f));
+    printScrolling(0, 5, "CPU Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%d", briMultiplier);
+    printScrolling(0, 6, "Bri Limit: ", buffer);
+    printScrolling(0, 7, "Lim.Cause: ", shared->getTempReduceCauseString());
 }
 
 String CinemagicDisplay::getEffectOrPalletName(int inputEffPal, const char *qstring) {

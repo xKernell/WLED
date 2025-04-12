@@ -148,6 +148,7 @@ public:
      * Use it to initialize network interfaces
      */
     void connected() {
+        DEBUG_PRINTF("CINEMAGIC Connected, MODE: %s\n", (apActive ? "AP" : "WIFI"));
         shared.ssid = apActive ? apSSID : WiFi.SSID();
         shared.ip = Network.localIP();
 #ifdef USERMOD_CINEMAGIC_OLED

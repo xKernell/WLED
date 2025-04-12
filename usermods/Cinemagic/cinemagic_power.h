@@ -37,8 +37,6 @@ public:
 
     void loop();
 
-    static const char *getCapacityStateString(CapacityMeasurementState state);
-
     void updateDisplayString() const;
 
     void saveToFS(bool force = false);
@@ -292,19 +290,6 @@ void CMPower::loop() {
 #endif
     updateDisplayString();
     saveToFS();
-}
-
-const char *CMPower::getCapacityStateString(CapacityMeasurementState state) {
-    switch (state) {
-        case IDLE:
-            return "IDLE";
-        case WAITING_FOR_FULL:
-            return "WAITING";
-        case MEASURING_CAPACITY:
-            return "MEASURING";
-        default:
-            return "UNKNOWN";
-    }
 }
 
 void CMPower::updateDisplayString() const {

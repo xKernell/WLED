@@ -53,7 +53,7 @@ static const DisplayItem DisplayModeItems[4][MAX_MODE_ITEMS] = {
 
 #define MAX_SWITCHABLE_VIEW 4
 static const DisplayView SwitchableViewItems[MAX_SWITCHABLE_VIEW] = {
-        MAIN_VIEW, NETWORK_VIEW, DEVICE_INFO, SETTING_VIEW
+        MAIN_VIEW, NETWORK_VIEW, DEVICE_INFO //, SETTING_VIEW
 };
 
 enum BrightnessDecreaseCause : uint8_t {
@@ -274,6 +274,19 @@ void cmUpdateStrip() {
     colorUpdated(CALL_MODE_DIRECT_CHANGE);
     updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
     strip.show();
+}
+
+const char *getCapacityStateString(CapacityMeasurementState state) {
+    switch (state) {
+        case IDLE:
+            return "IDLE";
+        case WAITING_FOR_FULL:
+            return "WAITING";
+        case MEASURING_CAPACITY:
+            return "MEASURING";
+        default:
+            return "UNKNOWN";
+    }
 }
 
 #endif //WLED_CINEMAGIC_SHARED_H
