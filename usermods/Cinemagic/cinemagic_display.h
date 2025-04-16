@@ -12,7 +12,8 @@
 
 class CinemagicDisplay {
 public:
-    explicit CinemagicDisplay(CMShared *sh) : shared(sh) {};
+    explicit CinemagicDisplay(CMShared *sh) : shared(sh) {
+    };
 
     void begin();
 
@@ -28,6 +29,7 @@ private:
     DisplayMode lastMode = CCT_MODE;
     DisplayItem lastItem = NO_ITEM;
     bool lastAPMode = false;
+    bool lastAPModeNetwork = false;
     uint8_t lastBatPercentage = 0;
     int8_t lastTemp = 0;
     int32_t lastVoltage = 0;
@@ -46,7 +48,14 @@ private:
 
     void showNetworkView();
 
+    void showDeviceInfoView();
+
     String getEffectOrPalletName(int inputEffPal, const char *qstring);
+
+    void printScrolling(uint8_t col, uint8_t row,
+                        const char *label,
+                        const char *text,
+                        uint16_t msPerStep = 250);
 };
 
 void CinemagicDisplay::begin() {
@@ -60,18 +69,18 @@ void CinemagicDisplay::begin() {
 
 void CinemagicDisplay::loop() {
     // 1) After 4s on startup screen, switch to main view
-    if (lastView != shared->currentView) {
+    if (lastView != shared->control.currentView) {
         isDrawn = false;
-        lastView = shared->currentView;
+        lastView = shared->control.currentView;
     } else {
         isDrawn = true;
     }
-    switch (shared->currentView) {
+    switch (shared->control.currentView) {
         default:
         case STARTUP_VIEW:
-            if (shared->currentView == STARTUP_VIEW && millis() - bootTime >= 4000) {
+            if (shared->control.currentView == STARTUP_VIEW && millis() - bootTime >= 4000) {
                 showMainView();
-                shared->currentView = MAIN_VIEW;
+                shared->control.currentView = MAIN_VIEW;
             } else {
                 showStartupScreen();
             }
@@ -79,18 +88,17 @@ void CinemagicDisplay::loop() {
         case MAIN_VIEW:
             showMainView();
             break;
-        case BATTERY_VIEW:
-            break;
-        case TEMPERATURE_VIEW:
+        case DEVICE_INFO:
+            showDeviceInfoView();
             break;
         case NETWORK_VIEW:
+            showNetworkView();
             break;
         case SETTING_VIEW:
             break;
         case NODE_VIEWS:
             break;
     }
-
 }
 
 void CinemagicDisplay::showStartupScreen() {
@@ -135,7 +143,7 @@ void CinemagicDisplay::showStatusBar() {
 
     if (!isDrawn || lastVoltage != shared->power.voltage) {
         lastVoltage = shared->power.voltage;
-        u8x8->setCursor(5, 0);
+        u8x8->setCursor(4, 0);
         u8x8->printf("%d.%02dV", shared->power.voltage / 100, abs(shared->power.voltage % 100));
     }
 
@@ -148,9 +156,9 @@ void CinemagicDisplay::showStatusBar() {
     }
 
     // wifi icon
-    if (!isDrawn || lastAPMode != shared->apMode) {
-        lastAPMode = shared->apMode;
-        if (shared->apMode) {
+    if (!isDrawn || lastAPMode != apActive) {
+        lastAPMode = apActive;
+        if (apActive) {
             u8x8->setCursor(13, 0);
             u8x8->print("AP");
         } else {
@@ -180,8 +188,8 @@ void CinemagicDisplay::showMainView() {
     u8x8->setCursor(0, 10);
     u8x8->setFont(u8x8_font_chroma48medium8_r);
 
-    if (!isDrawn || lastMode != shared->currentMode) {
-        lastMode = shared->currentMode;
+    if (!isDrawn || lastMode != shared->control.currentMode) {
+        lastMode = shared->control.currentMode;
         isDrawn = false;
         u8x8->setInverseFont(lastMode == CCT_MODE ? 1 : 0);
         u8x8->print(" CCT ");
@@ -203,12 +211,13 @@ void CinemagicDisplay::showMainView() {
         }
         u8x8->setCursor(4, 12);
         u8x8->setFont(u8x8_font_chroma48medium8_r);
-        u8x8->printf("%u", (uint8_t) ((lastBri * 100) / 255));
+        uint8_t lb = (uint8_t) ((lastBri * 100) / 255);
+        u8x8->printf("%u%s", lb, (lb < 10 ? "   " : (lb < 100 ? "  " : " ")));
     }
 
     // Show CCT Temperature
-    if ((!isDrawn || lastCCTTemp != shared->ledCCTTemp) && lastMode == CCT_MODE) {
-        lastCCTTemp = shared->ledCCTTemp;
+    if ((!isDrawn || lastCCTTemp != shared->control.ledCCTTemp) && lastMode == CCT_MODE) {
+        lastCCTTemp = shared->control.ledCCTTemp;
         if (!isDrawn) {
             u8x8->setFont(CINEMAGIC_DP_Icons_2x1);
             u8x8->drawGlyph(1, 14, 8); // Sun Icon
@@ -219,8 +228,8 @@ void CinemagicDisplay::showMainView() {
     }
 
     // Show HSI
-    if ((!isDrawn || lastHUE != shared->ledHue) && lastMode == HSI_MODE) {
-        lastHUE = shared->ledHue;
+    if ((!isDrawn || lastHUE != shared->control.ledHue) && lastMode == HSI_MODE) {
+        lastHUE = shared->control.ledHue;
         if (!isDrawn) {
             u8x8->setFont(CINEMAGIC_DP_Icons_2x1);
             u8x8->drawGlyph(1, 14, 4); // Sun Icon
@@ -248,7 +257,7 @@ void CinemagicDisplay::showMainView() {
         u8x8->setCursor(9, 12);
         u8x8->setFont(u8x8_font_chroma48medium8_r);
         u8x8->print(getEffectOrPalletName(lastEffect, JSON_mode_names));
-    } else if (!isDrawn && lastMode != EFFECT_MODE){
+    } else if (!isDrawn && lastMode != EFFECT_MODE) {
         u8x8->setCursor(9, 12);
         u8x8->print("       ");
     }
@@ -259,16 +268,16 @@ void CinemagicDisplay::showMainView() {
         u8x8->setCursor(9, 14);
         u8x8->setFont(u8x8_font_chroma48medium8_r);
         u8x8->print(getEffectOrPalletName(lastPallet, JSON_palette_names));
-    } else if (!isDrawn && lastMode != EFFECT_MODE){
+    } else if (!isDrawn && lastMode != EFFECT_MODE) {
         u8x8->setCursor(9, 14);
         u8x8->print("       ");
     }
 
-    if (!isDrawn || lastItem != shared->currentItem) {
-        lastItem = shared->currentItem;
+    if (!isDrawn || lastItem != shared->control.currentItem) {
+        lastItem = shared->control.currentItem;
         u8x8->setFont(CINEMAGIC_DP_Icons_1x1);
 
-        switch (shared->currentItem) {
+        switch (shared->control.currentItem) {
             default:
             case NO_ITEM:
                 break;
@@ -303,34 +312,64 @@ void CinemagicDisplay::showMainView() {
 }
 
 void CinemagicDisplay::showNetworkView() {
-    u8x8->clearDisplay();
-    u8x8->setCursor(0, 0);
-
-    // Check if WLED is in AP or STA mode
-    // A typical approach is:
-    bool inApMode = (WiFi.getMode() & WIFI_AP);
-
-    if (inApMode) {
-        // Show AP SSID & pass
-        // By default, WLED sets the AP credentials from wifi_settings.
-        // Usually stored in global char apSSID[], apPass[] (in wled.h).
-
-        u8x8->println("AP Mode!");
-        u8x8->print("SSID: ");
-        u8x8->println(shared->ssid);
-        u8x8->print("Pass: ");
-        u8x8->println(apPass);
-    } else {
-        // STA mode => show Wi-Fi SSID + IP
-        // WiFi.SSID() is the station SSID
-        // WiFi.localIP() is the IP
-        u8x8->println("WiFi Mode");
-        u8x8->print("SSID: ");
-        u8x8->println(shared->ssid);
-
-        u8x8->print("IP: ");
-        u8x8->println(shared->ip.toString().c_str());
+    if (!isDrawn) {
+        u8x8->clearDisplay();
     }
+    showStatusBar();
+
+    u8x8->setCursor(0, 10);
+
+    if (!isDrawn || lastAPModeNetwork != apActive) {
+        u8x8->setFont(u8x8_font_torussansbold8_r);
+        if (apActive) u8x8->draw1x2String(3, 2, " AP MODE ");
+        else u8x8->draw1x2String(3, 2, "WIFI MODE");
+    }
+    u8x8->setFont(u8x8_font_chroma48medium8_r);
+
+    if (apActive) {
+        u8x8->setFont(u8x8_font_chroma48medium8_r);
+        printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
+        printScrolling(0, 5, "Pass: ", apPass);
+    } else {
+        u8x8->setFont(u8x8_font_chroma48medium8_r);
+        printScrolling(0, 4, "SSID: ", shared->ssid.c_str());
+        printScrolling(0, 5, "IP: ", shared->ip.toString().c_str());
+    }
+
+    if (!isDrawn || lastAPModeNetwork != apActive) {
+        lastAPModeNetwork = apActive;
+        u8x8->setCursor(0, 6);
+        u8x8->setInverseFont(1);
+        if (apActive) {
+            u8x8->println(">CONNECT TO WIFI");
+        } else {
+            u8x8->println(">ENABLE AP      ");
+        }
+        u8x8->setInverseFont(0);
+    }
+}
+
+void CinemagicDisplay::showDeviceInfoView() {
+    static char buffer[12];
+    if (!isDrawn) {
+        u8x8->clearDisplay();
+    }
+    u8x8->setCursor(0, 0);
+    u8x8->setFont(u8x8_font_chroma48medium8_r);
+    printScrolling(0, 0, "Name: ", serverDescription);
+    snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.voltage) / 100.f));
+    printScrolling(0, 1, "Batt Volt: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.current) / 100.f));
+    printScrolling(0, 2, "Batt Curr: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fA", (float(shared->temp.led) / 100.f));
+    printScrolling(0, 3, "LED Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.board) / 100.f));
+    printScrolling(0, 4, "MB Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.cpu) / 100.f));
+    printScrolling(0, 5, "CPU Temp: ", buffer);
+    snprintf(buffer, sizeof(buffer), "%d", briMultiplier);
+    printScrolling(0, 6, "Bri Limit: ", buffer);
+    printScrolling(0, 7, "Lim.Cause: ", shared->getTempReduceCauseString());
 }
 
 String CinemagicDisplay::getEffectOrPalletName(int inputEffPal, const char *qstring) {
@@ -346,12 +385,50 @@ String CinemagicDisplay::getEffectOrPalletName(int inputEffPal, const char *qstr
         for (byte i = 5; i <= printedChars; i++) lineBuffer[i - 5] = lineBuffer[i]; //include '\0'
         printedChars -= 5;
     }
-    char smallBuffer3[MAX_MODE_LINE_SPACE + 1];          // uses 1x1 icon for mode/palette
+    char smallBuffer3[MAX_MODE_LINE_SPACE + 1]; // uses 1x1 icon for mode/palette
     uint8_t smallChars3 = 0;
     for (uint8_t i = 0; i < MAX_MODE_LINE_SPACE; i++)
         smallBuffer3[smallChars3++] = (i >= printedChars) ? ' ' : lineBuffer[i];
     smallBuffer3[smallChars3] = 0;
     return smallBuffer3;
+}
+
+void CinemagicDisplay::printScrolling(uint8_t col, uint8_t row,
+                                      const char *label,
+                                      const char *text,
+                                      uint16_t msPerStep) {
+    const uint8_t COLS = 16; // e.g. 16
+    const uint8_t labLen = strlen(label);
+    const uint8_t avail = (col + labLen >= COLS) ? 0 : COLS - col - labLen;
+
+    u8x8->setCursor(col, row);
+    u8x8->print(label);
+
+    if (avail == 0) return; // no space left
+
+    const uint8_t txtLen = strlen(text);
+
+    if (txtLen <= avail) {
+        /* fits → print once and pad with blanks */
+        u8x8->print(text);
+        for (uint8_t i = txtLen; i < avail; i++) u8x8->print(' ');
+    } else {
+        /* scroll --------------------------------------------------------- */
+        static const uint8_t GAP = 2; // blank columns between repeats
+        const uint32_t step = (millis() / msPerStep) % (txtLen + GAP);
+        char buf[17]; // max 16 cols + '\0'
+
+        for (uint8_t i = 0; i < avail; i++) {
+            uint16_t src = step + i;
+            char c;
+            if (src < txtLen) c = text[src];
+            else if (src < txtLen + GAP) c = ' '; // gap
+            else c = text[src - (txtLen + GAP)];
+            buf[i] = c;
+        }
+        buf[avail] = '\0';
+        u8x8->print(buf);
+    }
 }
 
 #endif

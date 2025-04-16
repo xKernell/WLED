@@ -28,6 +28,12 @@
 
 #endif
 
+#ifdef USERMOD_CINEMAGIC_MESH
+
+#include "cinemagic_mesh.h"
+
+#endif
+
 #ifdef USERMOD_CINEMAGIC_BLE
 #include "cinemagic_ble.h"
 #endif
@@ -58,8 +64,12 @@ private:
 #ifdef USERMOD_CINEMAGIC_BLE
     CMBLE ble{&shared};
 #endif
+#ifdef USERMOD_CINEMAGIC_MESH
+    CMMesh mesh{&shared};
+#endif
 #ifdef CINEMAGIC_FAN_PIN
     uint8_t lastFanDuty = 0; // 0-255
+    bool fanIsOn = false;
 #endif
     bool enabled{true};
     bool mInited{false};
@@ -108,12 +118,17 @@ public:
 #ifdef CINEMAGIC_WITH_3_BUTTON
         button.begin();
         button.onAnyButtonPressed = [this]() {
-            DEBUG_PRINTF("Current View: %d \tCurrent Mode: %d \tCurrent Item: %d!\n", shared.currentView, shared.currentMode, shared.currentItem);
+            DEBUG_PRINTF("Current View: %d \tCurrent Mode: %d \tCurrent Item: %d!\n", shared.control.currentView,
+                         shared.control.currentMode, shared.control.currentItem);
         };
 #endif
 
 #ifdef USERMOD_CINEMAGIC_BLE
         ble.begin();
+#endif
+
+#ifdef USERMOD_CINEMAGIC_MESH
+        mesh.begin();
 #endif
 
 #ifdef CINEMAGIC_FAN_PIN
@@ -123,6 +138,7 @@ public:
         ledcAttachPin(CINEMAGIC_FAN_PIN, 1);
 #endif
 
+        shared.ssid = apSSID;
         mInited = true;
     }
 
@@ -131,12 +147,16 @@ public:
      * connected() is called every time the WiFi is (re)connected
      * Use it to initialize network interfaces
      */
-    void connected() override {
-        shared.apMode = apActive;
+    void connected() {
+        DEBUG_PRINTF("CINEMAGIC Connected, MODE: %s\n", (apActive ? "AP" : "WIFI"));
         shared.ssid = apActive ? apSSID : WiFi.SSID();
         shared.ip = Network.localIP();
 #ifdef USERMOD_CINEMAGIC_OLED
 //        display.networkOverlay(PSTR("NETWORK INFO"), 7000);
+#endif
+
+#ifdef USERMOD_CINEMAGIC_MESH
+        mesh.onWiFiConnected();
 #endif
     }
 
@@ -183,23 +203,47 @@ public:
       ble.loop();
         //cmBle = millis() - now;
 #endif
+#ifdef USERMOD_CINEMAGIC_MESH
+        mesh.loop();
+#endif
 
 #ifdef CINEMAGIC_FAN_PIN
-//        now = millis();
-        // Update only if changed
-        int currentBrightness = bri;
         int mappedDuty = 0;
-        if (currentBrightness > 0 && shared.temp.led > 4000) {
-            // Otherwise, map [1..255] brightness to [80..255] duty
-            // (Adjust these values to taste)
-            mappedDuty = map(currentBrightness, 2, 255, 190, 255);
+        if (shared.temp.led > -10000) {
+            // use led panel temperature as a reference to control the fan
+            if (shared.temp.led < CINEMAGIC_FAN_START_TEMP && shared.temp.led > CINEMAGIC_FAN_START_TEMP - 300 && fanIsOn){
+                mappedDuty = CINEMAGIC_FAN_MIN_DUTY;
+            } else {
+                mappedDuty = map(shared.temp.led, CINEMAGIC_FAN_START_TEMP, CINEMAGIC_FAN_MAX_SPEED_TEMP,
+                                 CINEMAGIC_FAN_MIN_DUTY, CINEMAGIC_FAN_MAX_DUTY);
+            }
+        } else if (shared.temp.board > -10000) {
+            // use board temperature as a reference to control the fan
+            if (shared.temp.board < CINEMAGIC_FAN_START_TEMP && shared.temp.board > CINEMAGIC_FAN_START_TEMP - 300 && fanIsOn){
+                mappedDuty = CINEMAGIC_FAN_MIN_DUTY;
+            } else {
+                mappedDuty = map(shared.temp.board, CINEMAGIC_FAN_START_TEMP, CINEMAGIC_FAN_MAX_SPEED_TEMP,
+                                 CINEMAGIC_FAN_MIN_DUTY, CINEMAGIC_FAN_MAX_DUTY);
+            }
+        } else {
+            int currentBrightness = bri;
+            if (currentBrightness > 0) {
+                mappedDuty = map(currentBrightness, 40, 255, CINEMAGIC_FAN_MIN_DUTY, CINEMAGIC_FAN_MAX_DUTY);
+            }
+        }
+
+        mappedDuty = min(CINEMAGIC_FAN_MAX_DUTY, mappedDuty);
+        if (mappedDuty < 227){
+            fanIsOn = false;
+            mappedDuty = 0;
+        } else {
+            fanIsOn = true;
         }
 
         if (mappedDuty != lastFanDuty) {
             lastFanDuty = mappedDuty;
             ledcWrite(1, mappedDuty);
         }
-//        cmFan = millis() - now;
 #endif
 //        DEBUG_PRINTF("CINEMAGIC Loop (%dms): Power: %dms \tTemperature: %dms \tDisplay: %dms \tButton: %dms \tBLE: %dms \tFAN: %dms\n",
 //                     cmPower + cmTemperature + cmDisplay + cmButton + cmBle + cmFan,
@@ -339,10 +383,11 @@ public:
      * onStateChanged() is used to detect WLED state change
      * @mode parameter is CALL_MODE_... parameter used for notifications
      */
-    void onStateChange(uint8_t mode) {
-        // do something if WLED state changed (color, brightness, effect, preset, etc)
+    void onStateChange(uint8_t mode) override {
+#ifdef USERMOD_CINEMAGIC_MESH
+        mesh.onStateChanged(mode);
+#endif
     }
-
 
     /*
      * getId() allows you to optionally give your V2 usermod an unique ID (please define it in const.h!).

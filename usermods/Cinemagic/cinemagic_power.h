@@ -37,8 +37,6 @@ public:
 
     void loop();
 
-    static const char *getCapacityStateString(CapacityMeasurementState state);
-
     void updateDisplayString() const;
 
     void saveToFS(bool force = false);
@@ -136,9 +134,8 @@ void CMPower::loop() {
     if (updateRequired) {
         briMultiplier = static_cast<byte>(briMultiplierInt);  // Convert back to integer percentage (0-100)
         strip.setBrightness((bri * briMultiplier) / 100);
-        updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
-        strip.show();
-        delay(150);
+        cmUpdateStrip();
+        delay(100);
     }
 #endif
 
@@ -153,8 +150,14 @@ void CMPower::loop() {
         // first call
         smoothedOCV = estimatedOCV;
     }
-    // newSmoothed = (7*old + new) / 8  => alpha=1/8
-    smoothedOCV = (7 * smoothedOCV + estimatedOCV) / 8;
+    int diff = estimatedOCV - smoothedOCV;
+    if (diff < 0) {
+        // only move halfway down
+        smoothedOCV += diff / 2;
+    } else {
+        // normal smoothing if going up
+    smoothedOCV = (15 * smoothedOCV + estimatedOCV) / 16;
+    }
 
     // 4) Clamp the smoothed voltage in [3.0..4.2] => [300..420]
     int clampMin = BATTERY_MIN_VOLTAGE, clampMax = BATTERY_FULL_VOLTAGE;
@@ -287,19 +290,6 @@ void CMPower::loop() {
 #endif
     updateDisplayString();
     saveToFS();
-}
-
-const char *CMPower::getCapacityStateString(CapacityMeasurementState state) {
-    switch (state) {
-        case IDLE:
-            return "IDLE";
-        case WAITING_FOR_FULL:
-            return "WAITING";
-        case MEASURING_CAPACITY:
-            return "MEASURING";
-        default:
-            return "UNKNOWN";
-    }
 }
 
 void CMPower::updateDisplayString() const {

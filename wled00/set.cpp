@@ -62,10 +62,11 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
     }
 
     strlcpy(cmDNS, request->arg(F("CM")).c_str(), 33);
+    strlcpy(serverDescription, cmDNS, 33);
 
     apBehavior = request->arg(F("AB")).toInt();
     char oldSSID[33]; strcpy(oldSSID, apSSID);
-    strlcpy(apSSID, request->arg(F("AS")).c_str(), 33);
+    strlcpy(apSSID, cmDNS, 33);
     if (!strcmp(oldSSID, apSSID) && apActive) forceReconnect = true;
     apHide = request->hasArg(F("AH"));
     int passlen = request->arg(F("AP")).length();

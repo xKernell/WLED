@@ -4,6 +4,7 @@
 
 #pragma once
 #ifdef CINEMAGIC_WITH_3_BUTTON
+
 #include "cinemagic_shared.h" // Include shared structures
 
 #define CM_NUM_BTN 3 // btn 1 = menu, btn 2 = up, btn 3 = down
@@ -35,7 +36,8 @@ class CMButton {
 public:
     std::function<void()> onAnyButtonPressed;
 
-    explicit CMButton(CMShared *sh) : shared(sh) {}
+    explicit CMButton(CMShared *sh) : shared(sh) {
+    }
 
     void begin();
 
@@ -51,42 +53,57 @@ private:
     unsigned long buttonPressTime[CM_NUM_BTN] = {0};
     unsigned long lastHoldTime = {0};
     int currentItemIndex = 0;
+    int currentViewIndex = 0;
 
     void handleButton(uint8_t b);
+
     void handleSinglePress(uint8_t b);
+
     void handleDoublePress(uint8_t b);
+
     void handleLongPress(uint8_t b);
 
     void setMode(DisplayMode mode);
+
     void setNextItemIndex();
+
     void setItemValue(byte ratio, bool increase);
+
+    void goNextView();
+
     void setColorTemperature(uint8_t percent);
+
     void setHue(uint16_t hueDeg);
 
     void forceEnableAP();
+
+    void connectToWifi();
+
+    void stepEffect(int8_t dir);
+
+    void stepPal(int8_t dir);
 };
 
-void CMButton::begin(){
+void CMButton::begin() {
     // Initialize buttons
     for (uint8_t i = 0; i < numBtn; i++) {
         if (PinManager::allocatePin(btnPin[i], false, PinOwner::UM_CINEMAGIC)) {
             pinMode(btnPin[i], INPUT_PULLUP);
         }
     }
-
 }
 
-void CMButton::loop(){
-    if (!inited){
+void CMButton::loop() {
+    if (!inited) {
         inited = true;
-        setMode(shared->currentMode);
+        setMode(shared->control.currentMode);
     }
     for (uint8_t i = 0; i < numBtn; i++) {
         handleButton(i);
     }
 }
 
-void CMButton::handleButton(uint8_t b){
+void CMButton::handleButton(uint8_t b) {
     if (b >= CM_NUM_BTN) return;
     bool isPressed = digitalRead(btnPin[b]) == LOW;
     unsigned long now = millis();
@@ -100,7 +117,7 @@ void CMButton::handleButton(uint8_t b){
             handleLongPress(b);
             if (onAnyButtonPressed) onAnyButtonPressed();
             lastHoldTime = now;
-        } else if (btnState[b] == LONG_PRESSED && now - lastHoldTime > 250 && b != 0){
+        } else if (btnState[b] == LONG_PRESSED && now - lastHoldTime > 250 && b != 0) {
             handleLongPress(b);
         }
     } else {
@@ -124,12 +141,11 @@ void CMButton::handleButton(uint8_t b){
         if (onAnyButtonPressed) onAnyButtonPressed();
         lastPressTime[b] = 0;
     }
-
 }
 
 void CMButton::handleSinglePress(uint8_t b) {
-    DEBUG_PRINTF("Current View: %d \tButton No.%d Single Press!\n", shared->currentView, b);
-    switch (shared->currentView) {
+    DEBUG_PRINTF("Current View: %d \tButton No.%d Single Press!\n", shared->control.currentView, b);
+    switch (shared->control.currentView) {
         default:
         case MAIN_VIEW:
             if (b == 1) {
@@ -140,20 +156,29 @@ void CMButton::handleSinglePress(uint8_t b) {
                 setNextItemIndex();
             }
             break;
+        case NETWORK_VIEW:
+            if (b == 1 || b == 2) {
+                if (apActive) {
+                    connectToWifi();
+                } else {
+                    forceEnableAP();
+                }
+            }
+            break;
     }
 }
 
 void CMButton::handleDoublePress(uint8_t b) {
     DEBUG_PRINTF("Button No.%d Double Press!\n", b);
-    switch (shared->currentView){
+    switch (shared->control.currentView) {
         default:
         case MAIN_VIEW:
             if (b == 1) {
                 setItemValue(5, true);
             } else if (b == 2) {
                 setItemValue(5, false);
-            } else if (b == 0){
-                forceEnableAP();
+            } else if (b == 0) {
+                goNextView();
             }
             break;
     }
@@ -161,7 +186,7 @@ void CMButton::handleDoublePress(uint8_t b) {
 
 void CMButton::handleLongPress(uint8_t b) {
     DEBUG_PRINTF("Button No.%d Long Press!\n", b);
-    switch (shared->currentView) {
+    switch (shared->control.currentView) {
         default:
         case MAIN_VIEW:
             if (b == 1) {
@@ -170,7 +195,7 @@ void CMButton::handleLongPress(uint8_t b) {
                 setItemValue(1, false);
             } else if (b == 0) {
                 // long press menu btn: mode selection
-                switch (shared->currentMode) {
+                switch (shared->control.currentMode) {
                     default:
                     case CCT_MODE:
                         setMode(HSI_MODE);
@@ -190,34 +215,32 @@ void CMButton::handleLongPress(uint8_t b) {
     }
 }
 
-void CMButton::setMode(DisplayMode mode){
-    shared->currentMode = mode;
+void CMButton::setMode(DisplayMode mode) {
+    shared->control.currentMode = mode;
     currentItemIndex = 0;
-    switch (shared->currentMode) {
+    switch (shared->control.currentMode) {
         default:
         case CCT_MODE:
             effectCurrent = FX_MODE_STATIC;
             effectPalette = 0;
-            setColorTemperature(shared->ledCCTTemp);
-            colorUpdated(CALL_MODE_DIRECT_CHANGE);
-            strip.show();
-            delay(150);
-            shared->currentItem = BRIGHTNESS;
+            setColorTemperature(shared->control.ledCCTTemp);
+            cmUpdateStrip();
+            delay(100);
+            shared->control.currentItem = BRIGHTNESS;
             break;
         case HSI_MODE:
             effectCurrent = FX_MODE_STATIC;
             effectPalette = 0;
-            setHue(shared->ledHue);
-            colorUpdated(CALL_MODE_DIRECT_CHANGE);
-            strip.show();
-            delay(150);
-            shared->currentItem = BRIGHTNESS;
+            setHue(shared->control.ledHue);
+            cmUpdateStrip();
+            delay(100);
+            shared->control.currentItem = BRIGHTNESS;
             break;
         case EFFECT_MODE:
-            shared->currentItem = BRIGHTNESS;
+            shared->control.currentItem = BRIGHTNESS;
             break;
         case PRESET_MODE:
-            shared->currentItem = BRIGHTNESS;
+            shared->control.currentItem = BRIGHTNESS;
             break;
     }
 }
@@ -228,76 +251,99 @@ void CMButton::setNextItemIndex() {
     // cycle forward
     for (int i = 1; i < MAX_MODE_ITEMS; i++) {
         int nxt = (currentItemIndex + i) % MAX_MODE_ITEMS;
-        if (DisplayModeItems[shared->currentMode][nxt] != NO_ITEM) {
+        if (DisplayModeItems[shared->control.currentMode][nxt] != NO_ITEM) {
             currentItemIndex = nxt;
-            shared->currentItem = DisplayModeItems[shared->currentMode][nxt];
-            DEBUG_PRINTF("CINEMAGIC Button: setNextItemIndex Selected: %d!\n", shared->currentItem);
+            shared->control.currentItem = DisplayModeItems[shared->control.currentMode][nxt];
+            DEBUG_PRINTF("CINEMAGIC Button: setNextItemIndex Selected: %d!\n", shared->control.currentItem);
             return;
         }
     }
 }
 
-void CMButton::setItemValue(byte ratio = 1, bool increase = true){
-    switch (shared->currentItem) {
+void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
+    switch (shared->control.currentItem) {
         default:
         case BRIGHTNESS:
-            if (increase){
+            if (increase) {
                 bri = min(255, bri + 3 * ratio);
             } else {
                 bri = max(0, bri - 3 * ratio);
             }
             strip.setBrightness(bri);
-            colorUpdated(CALL_MODE_DIRECT_CHANGE);
-            strip.show();
+            cmUpdateStrip();
             delay(150);
             break;
         case COLOR_TEMPERATURE:
-            if (increase){
-                shared->ledCCTTemp = min(100, shared->ledCCTTemp + 1 * ratio);
+            if (increase) {
+                shared->control.ledCCTTemp = min(100, shared->control.ledCCTTemp + 1 * ratio);
             } else {
-                shared->ledCCTTemp = max(0, shared->ledCCTTemp - 1 * ratio);
+                shared->control.ledCCTTemp = max(0, shared->control.ledCCTTemp - 1 * ratio);
             }
-            setColorTemperature(shared->ledCCTTemp);
-            colorUpdated(CALL_MODE_DIRECT_CHANGE);
-            strip.show();
-            delay(150);
+            setColorTemperature(shared->control.ledCCTTemp);
+            cmUpdateStrip();
+            delay(100);
             break;
         case HSI:
-            if (increase){
-                shared->ledHue = min(360, shared->ledHue + 1 * ratio);
-                if (shared->ledHue == 360){
-                    shared->ledHue = 0;
+            if (increase) {
+                shared->control.ledHue = min(360, shared->control.ledHue + 1 * ratio);
+                if (shared->control.ledHue == 360) {
+                    shared->control.ledHue = 0;
                 }
             } else {
-                shared->ledHue = max(0, shared->ledHue - 1 * ratio);
-                if (shared->ledHue == 0){
-                    shared->ledHue = 360;
+                shared->control.ledHue = max(0, shared->control.ledHue - 1 * ratio);
+                if (shared->control.ledHue == 0) {
+                    shared->control.ledHue = 360;
                 }
             }
-            setHue(shared->ledHue);
-            colorUpdated(CALL_MODE_DIRECT_CHANGE);
-            strip.show();
-            delay(150);
+            setHue(shared->control.ledHue);
+            cmUpdateStrip();
+            delay(100);
+            break;
+        case EFFECT:
+            if (increase) {
+                stepEffect(+1);
+            } else {
+                stepEffect(-1);
+            }
+            cmUpdateStrip();
+            delay(100);
+            break;
+        case PALETTE:
+            if (increase) {
+                stepPal(+1);
+            } else {
+                stepPal(-1);
+            }
+            cmUpdateStrip();
+            delay(100);
             break;
     }
 }
 
-void CMButton::setColorTemperature(uint8_t percent)
-{
+void CMButton::goNextView() {
+    for (int i = 1; i < MAX_SWITCHABLE_VIEW; i++) {
+        int nxt = (currentViewIndex + i) % MAX_SWITCHABLE_VIEW;
+        currentViewIndex = nxt;
+        shared->control.currentView = SwitchableViewItems[currentViewIndex];
+        return;
+    }
+}
+
+void CMButton::setColorTemperature(uint8_t percent) {
     DEBUG_PRINTF("Button setColorTemperature: %d\n", percent);
     // 1) Convert 0..100% => Kelvin
     uint16_t kelvin = WARMEST_KELVIN
-                      + (uint32_t)(COLDEST_KELVIN - WARMEST_KELVIN) * percent / 100;
+                      + (uint32_t) (COLDEST_KELVIN - WARMEST_KELVIN) * percent / 100;
 
     // 2) Get the first bus
-    Bus* bus = BusManager::getBus(0);
+    Bus *bus = BusManager::getBus(0);
     if (!bus) {
         // no bus? just exit
         return;
     }
 
     // 3) Determine how many color channels
-    uint8_t chanCount = (uint8_t)bus->getNumberOfChannels();
+    uint8_t chanCount = (uint8_t) bus->getNumberOfChannels();
     // e.g. 2 => CCT, 3 => RGB, 4 => RGBW, 5 => RGB + CCT
 
     // 4) Clear all possible col[] channels up to 5
@@ -314,8 +360,7 @@ void CMButton::setColorTemperature(uint8_t percent)
         uint8_t coldVal = map(percent, 0, 100, 0, 255);
         col[0] = warmVal;
         col[1] = coldVal;
-    }
-    else if (chanCount == 3) {
+    } else if (chanCount == 3) {
         // **RGB**
         // Use colorKtoRGB to get an approximate white color
         byte rgb[4];
@@ -323,26 +368,24 @@ void CMButton::setColorTemperature(uint8_t percent)
         col[0] = rgb[0];
         col[1] = rgb[1];
         col[2] = rgb[2];
-    }
-    else if (chanCount == 4) {
+    } else if (chanCount == 4) {
         // **RGBW**
         byte rgb[4];
-        colorKtoRGB(kelvin, rgb);  // {r,g,b,0}
+        colorKtoRGB(kelvin, rgb); // {r,g,b,0}
         col[0] = rgb[0];
         col[1] = rgb[1];
         col[2] = rgb[2];
         // Simple approach: fill white channel with average of R,G,B
         col[3] = (rgb[0] + rgb[1] + rgb[2]) / 3;
-    }
-    else if (chanCount == 5) {
+    } else if (chanCount == 5) {
         // e.g. "RGB + dual white" (warm + cold)
         // We'll assume col[0..2] => R,G,B, col[3] => warm, col[4] => cold
         // We'll set RGB=0, use the same logic as the 2-channel CCT
         uint8_t warmVal = 255 - map(percent, 0, 100, 0, 255);
         uint8_t coldVal = map(percent, 0, 100, 0, 255);
-        col[0] = 0;  // R
-        col[1] = 0;  // G
-        col[2] = 0;  // B
+        col[0] = 0; // R
+        col[1] = 0; // G
+        col[2] = 0; // B
         col[3] = warmVal;
         col[4] = coldVal;
     } else {
@@ -351,23 +394,22 @@ void CMButton::setColorTemperature(uint8_t percent)
     }
 }
 
-void CMButton::setHue(uint16_t hueDeg)
-{
+void CMButton::setHue(uint16_t hueDeg) {
     DEBUG_PRINTF("Button setHue: %d\n", hueDeg);
     // 1) Clamp and convert to 0..65535
     if (hueDeg > 360) hueDeg = 360;
     // 360° ~ 65535, so multiply by ~182
-    uint16_t hue65535 = (uint32_t)hueDeg * 182;
+    uint16_t hue65535 = (uint32_t) hueDeg * 182;
 
     // 2) Get the first bus
-    Bus* bus = BusManager::getBus(0);
+    Bus *bus = BusManager::getBus(0);
     if (!bus) {
         // no bus? exit
         return;
     }
 
     // 3) Number of color channels
-    uint8_t chanCount = (uint8_t)bus->getNumberOfChannels();
+    uint8_t chanCount = (uint8_t) bus->getNumberOfChannels();
     // e.g. 2 => dedicated CCT, 3 => RGB, 4 => RGBW, 5 => “RGB + CCT”
 
     // 4) Clear all possible col[] channels up to 5
@@ -389,23 +431,20 @@ void CMButton::setHue(uint16_t hueDeg)
         uint16_t luma = (77UL * rgbTmp[0] + 150UL * rgbTmp[1] + 29UL * rgbTmp[2]) >> 8;
         // You could convert that to a warm/cold ratio, but that's up to your design.
         col[0] = luma; // warm
-        col[1] = 0;    // cold
-    }
-    else if (chanCount == 3) {
+        col[1] = 0; // cold
+    } else if (chanCount == 3) {
         // **RGB**
         col[0] = rgbTmp[0];
         col[1] = rgbTmp[1];
         col[2] = rgbTmp[2];
-    }
-    else if (chanCount == 4) {
+    } else if (chanCount == 4) {
         // **RGBW**
         col[0] = rgbTmp[0];
         col[1] = rgbTmp[1];
         col[2] = rgbTmp[2];
         // simple approach: fill col[3] (W) with average
         col[3] = (rgbTmp[0] + rgbTmp[1] + rgbTmp[2]) / 3;
-    }
-    else if (chanCount == 5) {
+    } else if (chanCount == 5) {
         // **RGB + Warm + Cold**
         // We'll set RGB from the hue, and maybe keep warm/cold at 0.
         // or do your own blending.
@@ -417,33 +456,51 @@ void CMButton::setHue(uint16_t hueDeg)
     } else {
         // fallback or unknown config
     }
-
 }
 
-void CMButton::forceEnableAP()
-{
-    // 1) Optionally stop any STA attempts
-    //    This makes sure we won't reconnect to a router.
-    WiFi.disconnect(true);
-
-    // 2) Set Wi-Fi to AP-only mode
-#if defined(ARDUINO_ARCH_ESP32)
-    WiFi.mode(WIFI_MODE_AP);
-#else
-    WiFi.mode(WIFI_AP);
-#endif
-
-    // 3) Provide SSID/password for the AP
-    //    You can use your own strings or WLED’s configured values:
-    //      serverDescription, apPass, etc.
-    //    For example, if you want to re-use user settings from wled.h:
-    WiFi.softAP(apSSID, apPass);
-
-    // 4) Mark the AP as active
-    apActive = true;
-
-    // 5) (Optional) If you want WLED to remain in AP mode persistently,
-    //    set apBehavior = AP_BEHAVIOR_ALWAYS (==3)
+void CMButton::forceEnableAP() {
     apBehavior = AP_BEHAVIOR_ALWAYS;
+    WLED::instance().initAP(true);
+}
+
+void CMButton::connectToWifi() {
+    apBehavior = AP_BEHAVIOR_NO_CONN;
+    WLED::instance().initConnection();
+}
+
+void CMButton::stepEffect(int8_t dir) {
+    DEBUG_PRINTF("[CMButton] stepEffect, DIR: %d\n", dir);
+    if (strip.getSegmentsNum() == 0) return; // nothing to do
+
+    uint8_t cur = strip.getMainSegment().mode; // current FX id
+    uint8_t cnt = strip.getModeCount(); // total FX
+    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
+
+    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
+        Segment &seg = strip.getSegment(i);
+        if (seg.isSelected()) seg.setMode(nxt);
+    }
+
+    stateUpdated(CALL_MODE_DIRECT_CHANGE); // saves & broadcasts
+    strip.trigger();
+}
+
+void CMButton::stepPal(int8_t dir) {
+    DEBUG_PRINTF("[CMButton] stepPal, DIR: %d\n", dir);
+    if (strip.getSegmentsNum() == 0) return;
+
+    uint8_t cur = strip.getMainSegment().palette; // current palette id
+    uint8_t cnt = strip.getPaletteCount(); // total palettes
+    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
+
+    /* set new palette on every SELECTED segment -------------------- */
+    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
+        Segment &seg = strip.getSegment(i);
+        if (seg.isSelected()) seg.setPalette(nxt);
+    }
+
+    /* tell WLED core & refresh ------------------------------------- */
+    stateUpdated(CALL_MODE_DIRECT_CHANGE);
+    strip.trigger();
 }
 #endif
