@@ -224,7 +224,7 @@ void CMButton::setMode(DisplayMode mode) {
             effectCurrent = FX_MODE_STATIC;
             effectPalette = 0;
             setColorTemperature(shared->control.ledCCTTemp);
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_ALL);
             delay(100);
             shared->control.currentItem = BRIGHTNESS;
             break;
@@ -232,7 +232,7 @@ void CMButton::setMode(DisplayMode mode) {
             effectCurrent = FX_MODE_STATIC;
             effectPalette = 0;
             setHue(shared->control.ledHue);
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_ALL);
             delay(100);
             shared->control.currentItem = BRIGHTNESS;
             break;
@@ -265,12 +265,11 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
         default:
         case BRIGHTNESS:
             if (increase) {
-                bri = min(255, bri + 3 * ratio);
+                shared->control.brightness = min(255, bri + 3 * ratio);
             } else {
-                bri = max(0, bri - 3 * ratio);
+                shared->control.brightness = max(0, bri - 3 * ratio);
             }
-            strip.setBrightness(bri);
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_BRI);
             delay(150);
             break;
         case COLOR_TEMPERATURE:
@@ -280,7 +279,7 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
                 shared->control.ledCCTTemp = max(0, shared->control.ledCCTTemp - 1 * ratio);
             }
             setColorTemperature(shared->control.ledCCTTemp);
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_COL);
             delay(100);
             break;
         case HSI:
@@ -296,7 +295,7 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
                 }
             }
             setHue(shared->control.ledHue);
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_COL);
             delay(100);
             break;
         case EFFECT:
@@ -305,7 +304,7 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
             } else {
                 stepEffect(-1);
             }
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_FX);
             delay(100);
             break;
         case PALETTE:
@@ -314,7 +313,7 @@ void CMButton::setItemValue(byte ratio = 1, bool increase = true) {
             } else {
                 stepPal(-1);
             }
-            cmUpdateStrip();
+            cmUpdateStrip(shared, CM_CALL_MODE_FX);
             delay(100);
             break;
     }
@@ -348,7 +347,7 @@ void CMButton::setColorTemperature(uint8_t percent) {
 
     // 4) Clear all possible col[] channels up to 5
     for (uint8_t i = 0; i < 5; i++) {
-        col[i] = 0;
+        shared->control.col[i] = 0;
     }
 
     if (chanCount == 2) {
@@ -358,36 +357,36 @@ void CMButton::setColorTemperature(uint8_t percent) {
         //  100% => fully cold => col[0]=0, col[1]=255
         uint8_t warmVal = 255 - map(percent, 0, 100, 0, 255);
         uint8_t coldVal = map(percent, 0, 100, 0, 255);
-        col[0] = warmVal;
-        col[1] = coldVal;
+        shared->control.col[0] = warmVal;
+        shared->control.col[1] = coldVal;
     } else if (chanCount == 3) {
         // **RGB**
         // Use colorKtoRGB to get an approximate white color
         byte rgb[4];
         colorKtoRGB(kelvin, rgb); // rgb[] => {r,g,b,0}
-        col[0] = rgb[0];
-        col[1] = rgb[1];
-        col[2] = rgb[2];
+        shared->control.col[0] = rgb[0];
+        shared->control.col[1] = rgb[1];
+        shared->control.col[2] = rgb[2];
     } else if (chanCount == 4) {
         // **RGBW**
         byte rgb[4];
         colorKtoRGB(kelvin, rgb); // {r,g,b,0}
-        col[0] = rgb[0];
-        col[1] = rgb[1];
-        col[2] = rgb[2];
+        shared->control.col[0] = rgb[0];
+        shared->control.col[1] = rgb[1];
+        shared->control.col[2] = rgb[2];
         // Simple approach: fill white channel with average of R,G,B
-        col[3] = (rgb[0] + rgb[1] + rgb[2]) / 3;
+        shared->control.col[3] = (rgb[0] + rgb[1] + rgb[2]) / 3;
     } else if (chanCount == 5) {
         // e.g. "RGB + dual white" (warm + cold)
         // We'll assume col[0..2] => R,G,B, col[3] => warm, col[4] => cold
         // We'll set RGB=0, use the same logic as the 2-channel CCT
         uint8_t warmVal = 255 - map(percent, 0, 100, 0, 255);
         uint8_t coldVal = map(percent, 0, 100, 0, 255);
-        col[0] = 0; // R
-        col[1] = 0; // G
-        col[2] = 0; // B
-        col[3] = warmVal;
-        col[4] = coldVal;
+        shared->control.col[0] = 0; // R
+        shared->control.col[1] = 0; // G
+        shared->control.col[2] = 0; // B
+        shared->control.col[3] = warmVal;
+        shared->control.col[4] = coldVal;
     } else {
         // fallback or unknown config
         // If chanCount < 2 or > 5, do something safe
@@ -414,7 +413,7 @@ void CMButton::setHue(uint16_t hueDeg) {
 
     // 4) Clear all possible col[] channels up to 5
     for (uint8_t i = 0; i < 5; i++) {
-        col[i] = 0;
+        shared->control.col[i] = 0;
     }
 
     // 5) Convert (Hue,S=255) to RGB
@@ -430,29 +429,29 @@ void CMButton::setHue(uint16_t hueDeg) {
         // We'll do a quick approach that sets fully on if not black, ignoring hue.
         uint16_t luma = (77UL * rgbTmp[0] + 150UL * rgbTmp[1] + 29UL * rgbTmp[2]) >> 8;
         // You could convert that to a warm/cold ratio, but that's up to your design.
-        col[0] = luma; // warm
-        col[1] = 0; // cold
+        shared->control.col[0] = luma; // warm
+        shared->control.col[1] = 0; // cold
     } else if (chanCount == 3) {
         // **RGB**
-        col[0] = rgbTmp[0];
-        col[1] = rgbTmp[1];
-        col[2] = rgbTmp[2];
+        shared->control.col[0] = rgbTmp[0];
+        shared->control.col[1] = rgbTmp[1];
+        shared->control.col[2] = rgbTmp[2];
     } else if (chanCount == 4) {
         // **RGBW**
-        col[0] = rgbTmp[0];
-        col[1] = rgbTmp[1];
-        col[2] = rgbTmp[2];
+        shared->control.col[0] = rgbTmp[0];
+        shared->control.col[1] = rgbTmp[1];
+        shared->control.col[2] = rgbTmp[2];
         // simple approach: fill col[3] (W) with average
-        col[3] = (rgbTmp[0] + rgbTmp[1] + rgbTmp[2]) / 3;
+        shared->control.col[3] = (rgbTmp[0] + rgbTmp[1] + rgbTmp[2]) / 3;
     } else if (chanCount == 5) {
         // **RGB + Warm + Cold**
         // We'll set RGB from the hue, and maybe keep warm/cold at 0.
         // or do your own blending.
-        col[0] = rgbTmp[0];
-        col[1] = rgbTmp[1];
-        col[2] = rgbTmp[2];
-        col[3] = 0; // warm
-        col[4] = 0; // cold
+        shared->control.col[0] = rgbTmp[0];
+        shared->control.col[1] = rgbTmp[1];
+        shared->control.col[2] = rgbTmp[2];
+        shared->control.col[3] = 0; // warm
+        shared->control.col[4] = 0; // cold
     } else {
         // fallback or unknown config
     }
@@ -469,38 +468,18 @@ void CMButton::connectToWifi() {
 }
 
 void CMButton::stepEffect(int8_t dir) {
-    DEBUG_PRINTF("[CMButton] stepEffect, DIR: %d\n", dir);
     if (strip.getSegmentsNum() == 0) return; // nothing to do
 
     uint8_t cur = strip.getMainSegment().mode; // current FX id
     uint8_t cnt = strip.getModeCount(); // total FX
-    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
-
-    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
-        Segment &seg = strip.getSegment(i);
-        if (seg.isSelected()) seg.setMode(nxt);
-    }
-
-    stateUpdated(CALL_MODE_DIRECT_CHANGE); // saves & broadcasts
-    strip.trigger();
+    shared->control.effect = (cur + cnt + dir) % cnt; // wrapped target
 }
 
 void CMButton::stepPal(int8_t dir) {
-    DEBUG_PRINTF("[CMButton] stepPal, DIR: %d\n", dir);
     if (strip.getSegmentsNum() == 0) return;
 
     uint8_t cur = strip.getMainSegment().palette; // current palette id
     uint8_t cnt = strip.getPaletteCount(); // total palettes
-    uint8_t nxt = (cur + cnt + dir) % cnt; // wrapped target
-
-    /* set new palette on every SELECTED segment -------------------- */
-    for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
-        Segment &seg = strip.getSegment(i);
-        if (seg.isSelected()) seg.setPalette(nxt);
-    }
-
-    /* tell WLED core & refresh ------------------------------------- */
-    stateUpdated(CALL_MODE_DIRECT_CHANGE);
-    strip.trigger();
+    shared->control.palette = (cur + cnt + dir) % cnt; // wrapped target
 }
 #endif

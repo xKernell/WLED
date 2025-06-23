@@ -1,0 +1,8 @@
+{
+  "name": "Cinemagic",
+  "build": { "libArchive": false },
+  "dependencies": {
+    "U8g2":"~2.27.2",
+    "Wire": ""
+  }
+}

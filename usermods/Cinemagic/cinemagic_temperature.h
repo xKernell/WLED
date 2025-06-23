@@ -29,8 +29,8 @@ public:
     void loop();
     void updateBrightnessCap(const int16_t bright){
         briMultiplier = static_cast<byte>(bright);  // Convert back to integer percentage (0-100)
-        strip.setBrightness((bri * briMultiplier) / 100);
-        cmUpdateStrip();
+        shared->control.brightness = (bri * briMultiplier) / 100;
+        cmUpdateStrip(shared, CM_CALL_MODE_BRI);
         delay(100);
     }
 };

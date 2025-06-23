@@ -5,7 +5,7 @@
 #ifndef WLED_CINEMAGIC_SHARED_H
 #define WLED_CINEMAGIC_SHARED_H
 
-#include "Arduino.h"
+#include "wled.h"
 
 static const uint16_t WARMEST_KELVIN = 1900;
 static const uint16_t COLDEST_KELVIN = 6000;
@@ -51,7 +51,7 @@ static const DisplayItem DisplayModeItems[4][MAX_MODE_ITEMS] = {
         {BRIGHTNESS, NO_ITEM,           NO_ITEM,      NO_ITEM, NO_ITEM, NO_ITEM}
 };
 
-#define MAX_SWITCHABLE_VIEW 4
+#define MAX_SWITCHABLE_VIEW 3
 static const DisplayView SwitchableViewItems[MAX_SWITCHABLE_VIEW] = {
         MAIN_VIEW, NETWORK_VIEW, DEVICE_INFO //, SETTING_VIEW
 };
@@ -205,6 +205,11 @@ struct CMControl {
     uint8_t ledCCTTemp = 20;
     uint16_t ledHue = 150;
     uint8_t brightness = 10;
+    byte col[4];
+    uint8_t effect;
+    uint8_t effectSpeed = 5;
+    uint8_t effectIntensity = 50;
+    uint8_t palette;
 };
 
 struct CMShared {
@@ -267,15 +272,43 @@ typedef enum {
 
 #endif
 
-void cmUpdateStrip() {
+#define CM_CALL_MODE_ALL 0
+#define CM_CALL_MODE_BRI 1
+#define CM_CALL_MODE_COL 2
+#define CM_CALL_MODE_FX 3
+
+void cmUpdateStrip(CMShared *shared, byte callMode) {
+    if (!shared)
+        return;
     if (strip.isUpdating())
         return;
 
-    colorUpdated(CALL_MODE_DIRECT_CHANGE);
-    updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
-    strip.show();
+    if (callMode == CM_CALL_MODE_ALL || callMode == CM_CALL_MODE_COL) {
+        colPri[0] = shared->control.col[0];
+        colPri[1] = shared->control.col[1];
+        colPri[2] = shared->control.col[2];
+        colPri[3] = shared->control.col[3];
+        colorUpdated(callMode);
+    }
+    if (callMode == CM_CALL_MODE_ALL || callMode == CM_CALL_MODE_BRI) {
+        bri = shared->control.brightness;
+        strip.setBrightness(bri);
+    }
+    if (callMode == CM_CALL_MODE_ALL || callMode == CM_CALL_MODE_FX) {
+        for (uint8_t i = 0; i < strip.getSegmentsNum(); i++) {
+            Segment &seg = strip.getSegment(i);
+            if (seg.isSelected()) seg.setMode(shared->control.effect);
+        }
+        stateUpdated(CALL_MODE_DIRECT_CHANGE); // saves & broadcasts
+        strip.trigger();
+    }
+    if (callMode != CM_CALL_MODE_FX) {
+        updateInterfaces(CALL_MODE_DIRECT_CHANGE);  // Ensure the UI updates
+        strip.show();
+    }
 }
 
+#ifdef USERMOD_CINEMAGIC_POWER
 const char *getCapacityStateString(CapacityMeasurementState state) {
     switch (state) {
         case IDLE:
@@ -288,5 +321,6 @@ const char *getCapacityStateString(CapacityMeasurementState state) {
             return "UNKNOWN";
     }
 }
+#endif
 
 #endif //WLED_CINEMAGIC_SHARED_H

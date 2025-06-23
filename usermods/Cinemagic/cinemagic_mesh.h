@@ -35,8 +35,7 @@ struct CinemagicMeshPacket {
     char  accountID[32];                   // must match MY_ACCOUNT_ID
     uint8_t group;                         // must match MY_DEVICE_GROUP
     char  deviceID[MESH_ID_LENGTH + 1];    // sender's ID
-    uint8_t brightness;                    // WLED bri
-
+    CMControl control;
 };
 
 class CMMesh {
@@ -95,7 +94,7 @@ public:
         strncpy(pkt.accountID, MY_ACCOUNT_ID, sizeof(pkt.accountID)-1);
         pkt.group = MY_DEVICE_GROUP;
         strncpy(pkt.deviceID, deviceID, MESH_ID_LENGTH);
-        pkt.brightness = bri; // from WLED
+        pkt.control = shared->control; // from WLED
         broadcastPacket(pkt);
     }
 
@@ -288,10 +287,9 @@ private:
         }
 
         // If we get here, we accept the brightness
-        DEBUG_PRINT(F("[Mesh] Updating brightness => "));
-        DEBUG_PRINTLN(pkt.brightness);
-        bri = pkt.brightness;
-        cmUpdateStrip();
+        DEBUG_PRINT(F("[Mesh] Updating"));
+        shared->control = pkt.control;
+        cmUpdateStrip(shared, CM_CALL_MODE_ALL);
     }
 };
 

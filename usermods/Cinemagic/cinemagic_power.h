@@ -134,7 +134,7 @@ void CMPower::loop() {
     if (updateRequired) {
         briMultiplier = static_cast<byte>(briMultiplierInt);  // Convert back to integer percentage (0-100)
         strip.setBrightness((bri * briMultiplier) / 100);
-        cmUpdateStrip();
+        cmUpdateStrip(shared, CM_CALL_MODE_BRI);
         delay(100);
     }
 #endif

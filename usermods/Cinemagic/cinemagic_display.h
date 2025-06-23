@@ -5,9 +5,10 @@
 #pragma once
 #ifdef USERMOD_CINEMAGIC_OLED
 
+#include "wled.h"
 #include "cinemagic_shared.h"
 #include <U8x8lib.h>
-#include "cinemagic_fonts.c"
+#include "cinemagic_fonts.h"
 
 
 class CinemagicDisplay {
@@ -129,6 +130,7 @@ void CinemagicDisplay::showStatusBar() {
     u8x8->setFont(u8x8_font_chroma48medium8_r);
 
     // show battery percentage
+#ifdef USERMOD_CINEMAGIC_POWER
     if (!isDrawn || lastBatPercentage != shared->power.batteryPercentage) {
         lastBatPercentage = shared->power.batteryPercentage;
         u8x8->setCursor(0, 0);
@@ -146,14 +148,17 @@ void CinemagicDisplay::showStatusBar() {
         u8x8->setCursor(4, 0);
         u8x8->printf("%d.%02dV", shared->power.voltage / 100, abs(shared->power.voltage % 100));
     }
+#endif
 
     // temperature
+#ifdef USERMOD_CINEMAGIC_TEMPERATURE
     if (!isDrawn || lastTemp != shared->temp.max) {
         lastTemp = shared->temp.max / 100;
         u8x8->setCursor(9, 0);
         u8x8->printf("%3u", lastTemp);
         u8x8->drawTile(12, 0, 1, (uint8_t *) CINEMAGIC_DP_DEGREE_ICON);
     }
+#endif
 
     // wifi icon
     if (!isDrawn || lastAPMode != apActive) {
@@ -357,16 +362,20 @@ void CinemagicDisplay::showDeviceInfoView() {
     u8x8->setCursor(0, 0);
     u8x8->setFont(u8x8_font_chroma48medium8_r);
     printScrolling(0, 0, "Name: ", serverDescription);
+#ifdef USERMOD_CINEMAGIC_POWER
     snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.voltage) / 100.f));
     printScrolling(0, 1, "Batt Volt: ", buffer);
     snprintf(buffer, sizeof(buffer), "%.2fV", (float(shared->power.current) / 100.f));
     printScrolling(0, 2, "Batt Curr: ", buffer);
+#endif
+#ifdef USERMOD_CINEMAGIC_TEMPERATURE
     snprintf(buffer, sizeof(buffer), "%.2fA", (float(shared->temp.led) / 100.f));
     printScrolling(0, 3, "LED Temp: ", buffer);
     snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.board) / 100.f));
     printScrolling(0, 4, "MB Temp: ", buffer);
     snprintf(buffer, sizeof(buffer), "%.2fC", (float(shared->temp.cpu) / 100.f));
     printScrolling(0, 5, "CPU Temp: ", buffer);
+#endif
     snprintf(buffer, sizeof(buffer), "%d", briMultiplier);
     printScrolling(0, 6, "Bri Limit: ", buffer);
     printScrolling(0, 7, "Lim.Cause: ", shared->getTempReduceCauseString());
