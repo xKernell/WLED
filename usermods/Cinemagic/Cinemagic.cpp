@@ -85,7 +85,7 @@ public:
      */
     inline bool isEnabled() { return enabled; }
 
-    void setup() {
+    void setup() override {
         if (!enabled) return;
         DEBUG_PRINTLN("Cinemagic user mod started");
 
@@ -143,7 +143,7 @@ public:
      * connected() is called every time the WiFi is (re)connected
      * Use it to initialize network interfaces
      */
-    void connected() {
+    void connected() override {
         DEBUG_PRINTF("CINEMAGIC Connected, MODE: %s\n", (apActive ? "AP" : "WIFI"));
         shared.ssid = apActive ? apSSID : WiFi.SSID();
         shared.ip = Network.localIP();
@@ -156,7 +156,7 @@ public:
 #endif
     }
 
-    void loop() {
+    void loop() override {
         // if usermod is disabled or called during strip updating just exit
         // NOTE: on very long strips strip.isUpdating() may always return true so update accordingly
         if (!enabled || strip.isUpdating()) return;
@@ -479,3 +479,6 @@ bool UsermodCinemagic::readFromConfig(JsonObject &root) {
 //    // Trigger WLED to save the configuration including your variable
 //    serializeConfig();
 //}
+
+static UsermodCinemagic cm_module;
+REGISTER_USERMOD(cm_module);

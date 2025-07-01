@@ -1,8 +1,11 @@
 {
   "name": "Cinemagic",
-  "build": { "libArchive": false },
+  "build": {
+    "libArchive": false
+  },
   "dependencies": {
-    "U8g2":"~2.27.2",
-    "Wire": ""
+    "U8g2": "~2.34.4",
+    "Wire": "",
+    "peterus/INA226Lib": "^1.1.3"
   }
 }

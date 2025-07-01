@@ -479,7 +479,7 @@ void CMButton::stepPal(int8_t dir) {
     if (strip.getSegmentsNum() == 0) return;
 
     uint8_t cur = strip.getMainSegment().palette; // current palette id
-    uint8_t cnt = strip.getPaletteCount(); // total palettes
+    uint8_t cnt = getPaletteCount(); // total palettes
     shared->control.palette = (cur + cnt + dir) % cnt; // wrapped target
 }
 #endif
