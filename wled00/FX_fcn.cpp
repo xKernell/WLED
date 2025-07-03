@@ -1224,11 +1224,6 @@ void WS2812FX::service() {
       unsigned frameDelay = FRAMETIME;
 
       if (!seg.freeze) { //only run effect function if not frozen
-        int oldCCT = BusManager::getSegmentCCT(); // store original CCT value (actually it is not Segment based)
-        // when correctWB is true we need to correct/adjust RGB value according to desired CCT value, but it will also affect actual WW/CW ratio
-        // when cctFromRgb is true we implicitly calculate WW and CW from RGB values
-        if (cctFromRgb) BusManager::setSegmentCCT(-1);
-        else            BusManager::setSegmentCCT(seg.currentCCT(), correctWB);
         // Effect blending
         uint16_t prog = seg.progress();
         seg.beginDraw(prog);                // set up parameters for get/setPixelColor() (will also blend colors and palette if blend style is FADE)
@@ -1249,7 +1244,6 @@ void WS2812FX::service() {
           Segment::modeBlend(false);        // unset semaphore
         }
         if (seg.isInTransition() && frameDelay > FRAMETIME) frameDelay = FRAMETIME; // force faster updates during transition
-        BusManager::setSegmentCCT(oldCCT);  // restore old CCT for ABL adjustments
       }
 
       seg.next_time = nowUp + frameDelay;
